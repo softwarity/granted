@@ -13,6 +13,7 @@
   },
   "scripts": {
     "build": "nest build ; cp package.json dist/package.json ; cp README.md dist/README.md",
+    "cp:panoptes-srv": "cp -r dist/* ../../hhdevelopment/panoptes-srv/node_modules/@hhnest/granted/",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"libs/**/*.ts\"",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix"
   },

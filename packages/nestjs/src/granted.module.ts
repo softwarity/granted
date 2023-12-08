@@ -8,9 +8,9 @@ export class GrantedModule {
     return {
       module: GrantedModule,
       providers: [
-        { provide: "GRANTED_MODULE_OPTIONS", useValue: opts }
+        { provide: 'GRANTED_MODULE_OPTIONS', useValue: opts }
       ],
-
+      exports: ['GRANTED_MODULE_OPTIONS']
     };
   }
 }

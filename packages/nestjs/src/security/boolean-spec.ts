@@ -36,7 +36,7 @@ export function or(...booleanSpecs: BooleanSpec[]): BooleanSpec {
     }};
 }
 // IsUserSpec
-export function isUser(type: 'Param' | 'Query' | 'Body', field: string) {
+export function isUser(type: 'Param' | 'Query' | 'Body', field: string): BooleanSpec {
     return {id: `isUser(${type}, ${field})`, apply: (request: Request, username: string, roles: string[]): boolean => {
         let user: string = '';
         if (type === 'Param') {

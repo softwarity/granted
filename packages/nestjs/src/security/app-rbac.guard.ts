@@ -5,7 +5,7 @@ import { GrantedModuleOptions } from 'src/models/granted-module-options';
 import { BooleanSpec } from './boolean-spec';
 
 @Injectable()
-export class Granted implements CanActivate {
+export class AppRbacGuard implements CanActivate {
   constructor(
     @Inject('GRANTED_MODULE_OPTIONS') private readonly options: GrantedModuleOptions,
     private reflector: Reflector

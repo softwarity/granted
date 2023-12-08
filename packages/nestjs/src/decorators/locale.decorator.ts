@@ -4,6 +4,6 @@ import { IncomingMessage } from 'http';
 export const Locale = createParamDecorator(
   (data: string, ctx: ExecutionContext) => {
     const incomingMessage: IncomingMessage = ctx.switchToHttp().getRequest<IncomingMessage>();
-    return (incomingMessage.headers['accept-language'] || 'en-us');
+    return (incomingMessage.headers['accept-language'] || 'en');
   },
 );
