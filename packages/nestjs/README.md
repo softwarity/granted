@@ -131,7 +131,7 @@ isUser(type: 'Param' | 'Query' | 'Body', field?: string): BooleanSpec
  - `groups`
  - `locale`
 
-`GrantedInfoJwtProvider` get information from JWT token (since 1.0.2)
+`GrantedInfoJwtProvider` get information from JWT token (since 1.0.3)
 
 if token provide `username`/`roles`/`groups` informations will be available
 
