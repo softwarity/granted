@@ -5,24 +5,22 @@ import { verify, decode, Algorithm } from 'jsonwebtoken';
 
 export class GrantedInfoJwtProvider implements IGrantedInfoProvider {
 
-    decoded?: any;
-
     constructor(private base64Key?: string, private algorithm?: Algorithm) { // 'RS256'
     }
 
     getUsernameFromRequest(request: Request): string {
-        this.initFromRequest(request);
-        return this.decoded.sub || 'anonymous';
+        const jwt = this.initFromRequest(request);
+        return jwt['sub'] || 'anonymous';
     }
 
     getRolesFromRequest(request: Request): string[] {
-        this.initFromRequest(request);
-        return this.decoded.roles || [];
+        const jwt =this.initFromRequest(request);
+        return jwt['roles'] || [];
     }
 
     getGroupsFromRequest(request: Request): string[] {
-        this.initFromRequest(request);
-        return this.decoded.groups || [];
+        const jwt =this.initFromRequest(request);
+        return jwt['groups'] || [];
     }
 
     getLocaleFromRequest(request: Request): string {
@@ -30,17 +28,17 @@ export class GrantedInfoJwtProvider implements IGrantedInfoProvider {
     }
 
     getUsernameFromIncomingMessage(incomingMessage: IncomingMessage): string {
-        this.initFromIncomingMessage(incomingMessage);
-        return this.decoded.sub || 'anonymous';
+        const jwt =this.initFromIncomingMessage(incomingMessage);
+        return jwt['sub'] || 'anonymous';
     }
     getRolesFromIncomingMessage(incomingMessage: IncomingMessage): string[] {
-        this.initFromIncomingMessage(incomingMessage);
-        return this.decoded.roles || [];
+        const jwt =this.initFromIncomingMessage(incomingMessage);
+        return jwt['roles'] || [];
     }
 
     getGroupsFromIncomingMessage(incomingMessage: IncomingMessage): string[] {
-        this.initFromIncomingMessage(incomingMessage);
-        return this.decoded.groups || [];
+        const jwt =this.initFromIncomingMessage(incomingMessage);
+        return jwt['groups'] || [];
     }
 
     getLocaleFromIncomingMessage(incomingMessage: IncomingMessage): string {
@@ -48,19 +46,21 @@ export class GrantedInfoJwtProvider implements IGrantedInfoProvider {
     }
 
     private initFromRequest(request: Request): void {
-        if (!this.decoded) {
+        if (!request['jwt']) {
             const authHeader = this.getAuthHeaderFromRequest(request);
             const token = this.getJwtFromAuthHeader(authHeader);
-            this.decoded = this.decodeJwt(token) || {};
+            request['jwt'] = this.decodeJwt(token) || {};
         }
+        return request['jwt'];
     }
 
     private initFromIncomingMessage(incomingMessage: IncomingMessage): void {
-        if (!this.decoded) {
+        if (!incomingMessage['jwt']) {
             const authHeader = this.getAuthHeaderIncomingMessage(incomingMessage);
             const token = this.getJwtFromAuthHeader(authHeader);
-            this.decoded = this.decodeJwt(token) || {};
+            incomingMessage['jwt'] = this.decodeJwt(token) || {};
         }
+        return incomingMessage['jwt'];
     }
 
     private getAuthHeaderIncomingMessage(incomingMessage: IncomingMessage): string {
