@@ -1,6 +1,6 @@
 {
   "name": "@hhnest/granted",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "author": "Achache francois",
   "license": "MIT",
   "description": "Granted Module for NestJS",
