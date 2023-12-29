@@ -27,13 +27,18 @@ npm install @hhnest/granted --save
 yarn add @hhnest/granted
 ```
 
-### Peer dependence
+### Peer dependencies
 
 | name | version |
 |---|---|
 | @nestjs/common | ^10.0.0 |
 | @nestjs/core | ^10.0.0 |
 | @nestjs/platform-express | ^10.0.0 |
+
+### Dependencies
+| name | version |
+|---|---|
+| jsonwebtoken | ^9.0.0 |
 
 ## Configuration
 
@@ -112,6 +117,40 @@ or(...booleanSpecs: BooleanSpec[]): BooleanSpec
 // IsUserSpec
 isUser(type: 'Param' | 'Query' | 'Body', field?: string): BooleanSpec
 ```
+### User informations provider
+
+2 providers information are provide by `GrantedModule`
+
+- `GrantedInfoProvider`
+- `GrantedInfoJwtProvider`
+
+`GrantedInfoProvider` get user information directly in headers
+
+ - `username`
+ - `roles`
+ - `groups`
+ - `locale`
+
+`GrantedInfoJwtProvider` get information from JWT token (since 1.0.2)
+
+if token provide `username`/`roles`/`groups` informations will be available
+
+`locale` is still get from header
+
+You have to provide a public RSA key for verify the token
+
+`AppModule.ts`
+```typescript
+import { GrantedModule } from '@hhnest/granted';
+import { GrantedInfoJwtProvider } from '@hhnest/granted/services';
+
+@Module({
+  imports: [
+    GrantedModule.forRoot({infoProvider: new GrantedInfoJwtProvider('-----BEGIN PUBLIC KEY-----\nMIIBIj...IDAQAB\n-----END PUBLIC KEY-----', 'RS256')}),
+  ],
+})
+export class AppModule {}
+```
 
 ### Extends
 
@@ -128,13 +167,15 @@ and set on option
   // Declare the module and define the option apply (for apply or not the security)
   providers: [MyGrantedInfoProvider],
   imports: [
-    GrantedModule.forRoot({apply: environment.applyAuthGuard, infoProvider: MyGrantedInfoProvider}),
+    GrantedModule.forRoot({apply: environment.applyAuthGuard, infoProvider: new MyGrantedInfoProvider()}),
   ],
 })
 export class AppModule {}
 ```
 
-This is actualy the default provider
+This is actualy the default provider that get information simply from headers
+
+Note that you have to manage 2 cases: `Request` and `IncomingMessage`
 
 ```typescript
 export class MyGrantedInfoProvider implements IGrantedInfoProvider {

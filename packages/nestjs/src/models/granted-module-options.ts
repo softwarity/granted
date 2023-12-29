@@ -3,5 +3,5 @@ import { IGrantedInfoProvider } from "src/services";
 
 export class GrantedModuleOptions {
     apply?: boolean;
-    infoProvider?: Type<IGrantedInfoProvider>;
+    infoProvider?: IGrantedInfoProvider;
 }

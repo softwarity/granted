@@ -7,11 +7,13 @@ import { GrantedInfoProvider } from 'src/services/granted-info.provider';
 
 @Injectable()
 export class AppGuard implements CanActivate {
+  private grantedInfoService: GrantedInfoProvider
   constructor(
     @Inject('GRANTED_MODULE_OPTIONS') private readonly options: GrantedModuleOptions,
-    private readonly grantedInfoService: GrantedInfoProvider,
     private reflector: Reflector
-  ) {}
+  ) {
+    this.grantedInfoService = options.infoProvider;
+  }
 
   canActivate(context: ExecutionContext): boolean {
     const booleanSpecs: BooleanSpec[] = this.reflector.get<BooleanSpec[]>('booleanSpecs', context.getHandler());

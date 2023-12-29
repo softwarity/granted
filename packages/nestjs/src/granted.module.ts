@@ -8,12 +8,11 @@ import { AppGuard } from './security/app.guard';
 @Module({})
 export class GrantedModule {
   static forRoot(options?: GrantedModuleOptions): DynamicModule {
-    const opts: GrantedModuleOptions = {apply: true, infoProvider: GrantedInfoProvider, ...(options || {})};
+    const opts: GrantedModuleOptions = {apply: true, infoProvider: new GrantedInfoProvider(), ...(options || {})};
     return {
       module: GrantedModule,
       providers: [
         { provide: 'GRANTED_MODULE_OPTIONS', useValue: opts }, 
-        { provide: GrantedInfoProvider, useClass: opts.infoProvider }, 
         { provide: APP_INTERCEPTOR, useClass: GlobalInterceptor },
         { provide: APP_GUARD, useClass: AppGuard }
       ],
