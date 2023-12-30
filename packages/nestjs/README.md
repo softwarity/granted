@@ -4,9 +4,9 @@
 
 [![Publish hhnest/granted to NPM](https://github.com/hhnest/granted/actions/workflows/tag.yml/badge.svg)](https://github.com/hhnest/granted/actions/workflows/tag.yml)
 
-[![npm](https://img.shields.io/npm/v/%40hhnest%2Fgranted?style=for-the-badge&logo=npm)(https://www.npmjs.com/package/@hhnest/granted)]
+[![npm](https://img.shields.io/npm/v/%40hhnest%2Fgranted?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/@hhnest/granted)
 
-[![npm](https://img.shields.io/npm/v/%40hhnest%2Fgranted?style=for-the-badge&logo=github&label=github)(https://github.com/hhnest/granted)]
+[![npm](https://img.shields.io/npm/v/%40hhnest%2Fgranted?style=for-the-badge&logo=github&label=github)](https://github.com/hhnest/granted)
 
 
 This module allow you to use RBAC security on you endpoint nestjs
