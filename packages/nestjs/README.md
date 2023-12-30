@@ -4,7 +4,8 @@
 
 [![Publish hhnest/granted to NPM](https://github.com/hhnest/granted/actions/workflows/tag.yml/badge.svg)](https://github.com/hhnest/granted/actions/workflows/tag.yml)
 
-[![npm version](https://badge.fury.io/js/@hhnest%2Fgranted.svg)](https://badge.fury.io/js/@hhnest%2Fgranted)
+![npm](https://img.shields.io/npm/v/%40hhnest%2Fgranted?style=for-the-badge)
+
 
 This module allow you to use RBAC security on you endpoint nestjs
 
