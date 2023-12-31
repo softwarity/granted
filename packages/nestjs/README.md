@@ -1,15 +1,14 @@
 # GRANTED Module for Nestjs
 
-[![Build hhnest/granted](https://github.com/hhnest/granted/actions/workflows/main.yml/badge.svg)](https://github.com/hhnest/granted/actions/workflows/main.yml)
-
-[![Publish hhnest/granted to NPM](https://github.com/hhnest/granted/actions/workflows/tag.yml/badge.svg)](https://github.com/hhnest/granted/actions/workflows/tag.yml)
-
 [![npm](https://img.shields.io/npm/v/%40hhnest%2Fgranted?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/@hhnest/granted)
-
 [![npm](https://img.shields.io/npm/v/%40hhnest%2Fgranted?style=for-the-badge&logo=github&label=github)](https://github.com/hhnest/granted)
 
+[![Build hhnest/granted](https://github.com/hhnest/granted/actions/workflows/main.yml/badge.svg)](https://github.com/hhnest/granted/actions/workflows/main.yml)
+[![Publish hhnest/granted to NPM](https://github.com/hhnest/granted/actions/workflows/tag.yml/badge.svg)](https://github.com/hhnest/granted/actions/workflows/tag.yml)
 
-This module allow you to use RBAC security on you endpoint nestjs
+
+
+This module allow you to use RBAC security on your endpoints nestjs
 
 ## Install @hhnest/granted
 
@@ -47,6 +46,8 @@ yarn add @hhnest/granted
 
 Just import the module `GrantedModule`, specify the implementation for fetch username, roles  and you can use the `annotations`.   
 
+
+Header provider
 `AppModule.ts`
 ```typescript
 @Module({
@@ -58,6 +59,17 @@ Just import the module `GrantedModule`, specify the implementation for fetch use
 export class AppModule {}
 ```
 
+Jwt Provider
+`AppModule.ts`
+```typescript
+@Module({
+  // Declare the module and define the option apply (for apply or not the security)
+  imports: [
+    GrantedModule.forRoot({apply: environment.applyAuthGuard, infoProvider: new GrantedInfoJwtProvider('-----BEGIN PUBLIC KEY-----\nMIIBIj...IDAQAB\n-----END PUBLIC KEY-----', 'RS256')}),
+  ],
+})
+export class AppModule {}
+```
 
 ## Use
 
