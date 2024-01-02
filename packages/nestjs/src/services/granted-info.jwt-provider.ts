@@ -1,11 +1,20 @@
 import { Request } from 'express';
+import * as fs from 'fs';
 import { IncomingMessage } from "http";
+import { Algorithm, decode, verify } from 'jsonwebtoken';
 import { IGrantedInfoProvider } from "./igranted-info.provider";
-import { verify, decode, Algorithm } from 'jsonwebtoken';
 
 export class GrantedInfoJwtProvider implements IGrantedInfoProvider {
 
-    constructor(private base64Key?: string, private algorithm?: Algorithm) { // 'RS256'
+    base64Key: string;
+    algorithm: Algorithm;
+
+    constructor(conf: {pemFile?: string, base64Key?: string, algorithm?: Algorithm}) { // 'RS256'
+        this.base64Key = conf.base64Key;
+        this.algorithm = conf.algorithm || 'RS256';
+        if (conf.pemFile) {
+            this.base64Key = fs.readFileSync(conf.pemFile, 'utf8');
+        }
     }
 
     getUsernameFromRequest(request: Request): string {
@@ -81,6 +90,11 @@ export class GrantedInfoJwtProvider implements IGrantedInfoProvider {
         try {
             return verify(token, this.base64Key, { algorithms: [this.algorithm] });
         } catch (err) {
+            console.log(`Error while decoding JWT.`);
+            console.log(`Token: ${token}`);
+            console.log(`Algorithm: ${this.algorithm}`);
+            console.log(`Public Key: ${this.base64Key}`);
+            
             console.error(err);
             return {};
         }

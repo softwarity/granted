@@ -63,9 +63,14 @@ Jwt Provider
 `AppModule.ts`
 ```typescript
 @Module({
-  // Declare the module and define the option apply (for apply or not the security)
+  // Declare the module and define the option apply (for apply or not the security) and GrantedInfoJwtProvider (for decode user info from jwt token)
   imports: [
-    GrantedModule.forRoot({apply: environment.applyAuthGuard, infoProvider: new GrantedInfoJwtProvider('-----BEGIN PUBLIC KEY-----\nMIIBIj...IDAQAB\n-----END PUBLIC KEY-----', 'RS256')}),
+    GrantedModule.forRoot({apply: environment.applyAuthGuard, infoProvider: new GrantedInfoJwtProvider({
+      algorithm: 'RS256', // RS256, EC256, PS256
+      pemFile: 'path/jwt_public_key.pem',
+      // or
+      base64Key: '-----BEGIN PUBLIC KEY-----\nBASE64KEYENCODED\n-----END PUBLIC KEY-----'
+    })}),
   ],
 })
 export class AppModule {}
