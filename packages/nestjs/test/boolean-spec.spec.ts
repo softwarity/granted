@@ -1,5 +1,5 @@
 import { Request } from 'express';
-import { and, hasRole, isAuthenticated, isFalse, isTrue, isUser, not, or } from '../src/security/boolean-spec';
+import { and, hasRole, isAuthenticated, isFalse, isTrue, isTenant, isUser, not, or } from '../src/security/boolean-spec';
 
 /** Minimal Request stub — only the fields the specs actually read. */
 function req(overrides: Partial<Request> = {}): Request {
@@ -91,6 +91,42 @@ describe('boolean-spec', () => {
     it('returns false when the body path is missing', () => {
       const r = req({ body: {} });
       expect(isUser('Body', 'author.id').apply(r, 'alice', [])).toBe(false);
+    });
+  });
+
+  describe('isTenant', () => {
+    it('matches the caller tenant against a route param', () => {
+      const r = req({ params: { tenantId: 'acme' } as any });
+      expect(isTenant('Param', 'tenantId').apply(r, 'alice', [], 'acme')).toBe(true);
+      expect(isTenant('Param', 'tenantId').apply(r, 'alice', [], 'globex')).toBe(false);
+    });
+
+    it('matches against a query param and a nested body path', () => {
+      const rq = req({ query: { tenant: 'acme' } as any });
+      expect(isTenant('Query', 'tenant').apply(rq, 'alice', [], 'acme')).toBe(true);
+      const rb = req({ body: { org: { id: 'acme' } } });
+      expect(isTenant('Body', 'org.id').apply(rb, 'alice', [], 'acme')).toBe(true);
+    });
+
+    it('denies when the caller has no tenant', () => {
+      const r = req({ params: { tenantId: 'acme' } as any });
+      expect(isTenant('Param', 'tenantId').apply(r, 'alice', [], undefined)).toBe(false);
+    });
+
+    it('denies when the requested value is missing', () => {
+      const r = req({ params: {} as any });
+      expect(isTenant('Param', 'tenantId').apply(r, 'alice', [], 'acme')).toBe(false);
+    });
+  });
+
+  describe('tenant forwarding through combinators', () => {
+    it('and/or/not pass the tenant down to nested specs', () => {
+      const r = req({ params: { tenantId: 'acme' } as any });
+      const spec = and(isAuthenticated(), or(hasRole('ADMIN'), isTenant('Param', 'tenantId')));
+      expect(spec.apply(r, 'alice', ['USER'], 'acme')).toBe(true); // owner of tenant
+      expect(spec.apply(r, 'alice', ['USER'], 'globex')).toBe(false); // wrong tenant, not admin
+      expect(spec.apply(r, 'alice', ['ADMIN'], 'globex')).toBe(true); // admin bypasses tenant
+      expect(not(isTenant('Param', 'tenantId')).apply(r, 'alice', [], 'globex')).toBe(true);
     });
   });
 

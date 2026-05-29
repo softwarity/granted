@@ -64,6 +64,17 @@ updateProfile(&#64;Param('userId') userId: string) &#123; /* ... */ &#125;
 &#64;GrantedTo(or(hasRole('ADMIN'), isUser('Body', 'customer.id')))
 createOrder() &#123; /* ... */ &#125;</app-code>
 
+    <h3>Cross-tenant protection</h3>
+    <p>
+      In a multi-tenant API, <code>isTenant</code> ensures the tenant addressed by the request matches the
+      caller's own tenant — admins excepted:
+    </p>
+    <app-code lang="ts">&#64;Get('tenants/:tenantId/invoices')
+&#64;GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isTenant('Param', 'tenantId'))))
+listInvoices(&#64;Tenant() tenant: string | undefined) &#123;
+  // also scope the data: WHERE tenant_id = tenant
+&#125;</app-code>
+
     <h3>Negation and constants</h3>
     <app-code lang="ts">// Everyone except a banned role
 &#64;GrantedTo(and(isAuthenticated(), not(hasRole('SUSPENDED'))))
@@ -83,12 +94,13 @@ export const ownerOrAdmin = (param: string) =&gt; or(hasRole('ADMIN'), isUser('P
 remove() &#123; /* ... */ &#125;</app-code>
 
     <div class="callout">
-      <strong>What the guard reads:</strong> only <code>username</code> and <code>roles</code> drive the
-      decision. The <a routerLink="/parameter-decorators"><code>&#64;Tenant()</code></a> value is
-      injection-only — it scopes <em>which data</em> an action may touch (a data-layer concern), not
-      <em>whether</em> the action is allowed. If your IdP exposes authorities under a different claim
-      (e.g. <code>groups</code>), map it to roles in the <a routerLink="/info-providers">provider</a>
-      rather than gating on a separate channel.
+      <strong>What the guard reads:</strong> <code>username</code>, <code>roles</code>, and — through
+      <code>isTenant</code> — <code>tenant</code>. The <code>tenant</code> check only verifies a
+      <em>requested</em> tenant against the <em>claimed</em> one; you still scope <em>which data</em> an
+      action touches at the data layer with the injected
+      <a routerLink="/parameter-decorators"><code>&#64;Tenant()</code></a> value. If your IdP exposes
+      authorities under a different claim (e.g. <code>groups</code>), map it to roles in the
+      <a routerLink="/info-providers">provider</a> rather than gating on a separate channel.
     </div>
   `,
 })

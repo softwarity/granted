@@ -23,6 +23,7 @@ export class AppGuard implements CanActivate {
     const request: Request = context.switchToHttp().getRequest();
     const roles: string[] = this.grantedInfoService.getRolesFromRequest(request);
     const username = this.grantedInfoService.getUsernameFromRequest(request);
-    return booleanSpecs.every((booleanSpec: BooleanSpec) => booleanSpec.apply(request, username, roles));
+    const tenant = this.grantedInfoService.getTenantFromRequest(request);
+    return booleanSpecs.every((booleanSpec: BooleanSpec) => booleanSpec.apply(request, username, roles, tenant));
   }
 }

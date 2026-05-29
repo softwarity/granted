@@ -109,7 +109,8 @@ isTrue()                               // always allow
 isFalse()                              // always deny
 hasRole(role: string)                  // role is in the user's roles
 isAuthenticated()                      // username is set and not 'anonymous'
-isUser(type: 'Param'|'Query'|'Body', field: string)  // request value === username
+isUser(type: 'Param'|'Query'|'Body', field: string)    // request value === username
+isTenant(type: 'Param'|'Query'|'Body', field: string)  // request value === caller's tenant
 ```
 
 `isUser` compares the current username with a value taken from the request — a route param, a query param, or a (dotted) body path — to express *"you may only touch your own resource"*:
@@ -120,7 +121,15 @@ isUser(type: 'Param'|'Query'|'Body', field: string)  // request value === userna
 update(@Param('userId') userId: string) { /* ... */ }
 ```
 
-> Authorization is driven by `username` and `roles` only. `tenant` is **not** an authorization input — it's injected for data-scoping (e.g. a `WHERE tenant_id = ?` clause), an orthogonal concern.
+`isTenant` is the multi-tenant counterpart: it matches a request value against the caller's **tenant** to block cross-tenant access (a user of tenant A reaching `/tenants/B/...`):
+
+```ts
+@Get('tenants/:tenantId/invoices')
+@GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isTenant('Param', 'tenantId'))))
+listInvoices() { /* the tenant in the URL must match the caller's token tenant */ }
+```
+
+> Authorization reads `username`, `roles` and (via `isTenant`) `tenant`. Note `isTenant` only checks that a *requested* tenant matches the *claimed* one — it does not replace data-layer scoping (`WHERE tenant_id = ?`), which you still apply with the injected `@Tenant()` value.
 
 ---
 

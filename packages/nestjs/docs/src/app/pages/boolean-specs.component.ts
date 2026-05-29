@@ -17,13 +17,13 @@ import { CodeComponent } from '../code/code.component';
 
     <app-code lang="ts">interface BooleanSpec &#123;
   id: string; // human-readable description, e.g. "and(isAuthenticated(),hasRole(ADMIN))"
-  apply(request: Request, username: string, roles: string[]): boolean;
+  apply(request: Request, username: string, roles: string[], tenant?: string): boolean;
 &#125;</app-code>
 
     <div class="callout">
-      Each spec receives the Express <code>request</code>, the resolved <code>username</code>, and the
-      resolved <code>roles</code>. That's why only those two identity fields can drive authorization —
-      <code>tenant</code> is injection-only and is not passed to <code>apply</code>.
+      Each spec receives the Express <code>request</code>, plus the resolved <code>username</code>,
+      <code>roles</code> and <code>tenant</code>. The <code>tenant</code> argument is optional, so custom
+      specs written against the older three-parameter shape stay valid.
     </div>
 
     <h3>Reference</h3>
@@ -46,6 +46,14 @@ import { CodeComponent } from '../code/code.component';
             the request value at <code>field</code> equals <code>username</code>.
             <code>type</code> is <code>'Param'</code>, <code>'Query'</code> or <code>'Body'</code>;
             for <code>'Body'</code>, <code>field</code> may be a dotted path (e.g. <code>customer.id</code>).
+          </td>
+        </tr>
+        <tr>
+          <td><code>isTenant(type, field)</code></td>
+          <td>
+            the request value at <code>field</code> equals the caller's <code>tenant</code>. Same
+            <code>type</code> / dotted-path rules as <code>isUser</code>. Denies when the caller has no
+            tenant. Blocks cross-tenant access.
           </td>
         </tr>
         <tr>
@@ -92,6 +100,23 @@ isUser('Body', 'customer.id')    // request.body.customer.id === username</app-c
     <p>
       For <code>'Body'</code>, a missing path resolves to a non-match (returns <code>false</code>) rather
       than throwing — a malformed or partial body can never accidentally grant access.
+    </p>
+
+    <h3>isTenant — block cross-tenant access</h3>
+    <p>
+      The multi-tenant counterpart of <code>isUser</code>: it matches a request value against the
+      <em>caller's</em> tenant (resolved by the <a routerLink="/info-providers">info provider</a>), to stop
+      a user of tenant A from reaching another tenant's resources.
+    </p>
+    <app-code lang="ts">// admin can reach any tenant; everyone else only their own
+&#64;Get('tenants/:tenantId/invoices')
+&#64;GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isTenant('Param', 'tenantId'))))
+listInvoices() &#123; /* ... */ &#125;</app-code>
+    <p>
+      <code>isTenant</code> <strong>denies</strong> when the caller carries no tenant, or when the
+      requested value is absent. It is a route-boundary guard — keep applying data-layer scoping
+      (<code>WHERE tenant_id = ?</code>) with the injected
+      <a routerLink="/parameter-decorators"><code>&#64;Tenant()</code></a> value as well.
     </p>
 
     <h3>The <code>id</code> field</h3>
