@@ -24,11 +24,13 @@ findOrders(@Username() me: string, @Roles() roles: string[]) { /* ... */ }
 ## Features
 
 - 🛡️ **One decorator to secure a route** — `@GrantedTo(...specs)`, applied by a global guard
-- 🧩 **Composable boolean specifications** — `and`, `or`, `not`, `hasRole`, `isAuthenticated`, `isUser`, `isTrue`, `isFalse`
+- 🧩 **Composable boolean specifications** — `and`, `or`, `not`, `hasRole`, `isAuthenticated`, `isUser`, `isTenant`, `isTrue`, `isFalse`
 - 💉 **Parameter decorators** — `@Username()`, `@Roles()`, `@Tenant()`
-- 🔌 **Pluggable user-info provider** — read from HTTP headers (default) or from a verified JWT
+- 🪜 **Role hierarchy** — declare that one role implies others (`ADMIN ⇒ MANAGER ⇒ USER`); checks and injection see the expanded set
+- 🧹 **Known-roles filtering** — keep only the roles your module owns, ignoring those a shared token carries for other services
+- 🔌 **Pluggable user-info provider** — HTTP headers (JSON or CSV roles) or a verified JWT
 - 🔑 **JWT verification** with **IdP presets** — RFC 9068/SCIM, Azure AD/Entra, Keycloak, Okta — or a fully custom claim mapping
-- 🏢 **Multi-tenant aware** — inject the caller's tenant for data-scoping (orthogonal to authorization)
+- 🏢 **Multi-tenant aware** — `@Tenant()` injection plus `isTenant` to block cross-tenant access
 - 🪶 **Tiny & dependency-light** — just `jsonwebtoken`; works on NestJS 10 & 11
 
 ## Installation
@@ -107,7 +109,7 @@ or(...specs)                           // at least one passes
 not(spec)                              // inverts a spec
 isTrue()                               // always allow
 isFalse()                              // always deny
-hasRole(role: string)                  // role is in the user's roles
+hasRole(role: string)                  // role is in the user's roles (after hierarchy expansion)
 isAuthenticated()                      // username is set and not 'anonymous'
 isUser(type: 'Param'|'Query'|'Body', field: string)    // request value === username
 isTenant(type: 'Param'|'Query'|'Body', field: string)  // request value === caller's tenant
