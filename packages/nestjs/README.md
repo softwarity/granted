@@ -1,235 +1,211 @@
-# GRANTED Module for Nestjs
+# @softwarity/nestjs-granted
 
-[![npm](https://img.shields.io/npm/v/%40hhnest%2Fgranted?style=for-the-badge&logo=npm)](https://www.npmjs.com/package/@hhnest/granted)
-[![npm](https://img.shields.io/npm/v/%40hhnest%2Fgranted?style=for-the-badge&logo=github&label=github)](https://github.com/hhnest/granted)
+[![npm version](https://img.shields.io/npm/v/@softwarity/nestjs-granted.svg)](https://www.npmjs.com/package/@softwarity/nestjs-granted)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node](https://img.shields.io/node/v/@softwarity/nestjs-granted.svg)](https://nodejs.org)
+[![Unit tests](https://github.com/softwarity/nestjs-granted/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/softwarity/nestjs-granted/actions/workflows/unit-tests.yml)
 
-[![Build hhnest/granted](https://github.com/hhnest/granted/actions/workflows/main.yml/badge.svg)](https://github.com/hhnest/granted/actions/workflows/main.yml)
-[![Publish hhnest/granted to NPM](https://github.com/hhnest/granted/actions/workflows/tag.yml/badge.svg)](https://github.com/hhnest/granted/actions/workflows/tag.yml)
+**RBAC security for NestJS endpoints.** Declarative, decorator-based authorization built on a small algebra of composable boolean specifications — and a pluggable provider that reads the current user from HTTP headers or from a verified JWT.
 
+📚 **Full documentation:** [softwarity.github.io/nestjs-granted](https://softwarity.github.io/nestjs-granted/)
 
+---
 
-This module allow you to use RBAC security on your endpoints nestjs
+## Why?
 
-## Install @hhnest/granted
+You have endpoints behind an API gateway (or an OAuth2 proxy) that already authenticated the caller and forwards the identity — either as plain headers (`username`, `roles`) or as a `Bearer` JWT. You don't want another auth stack; you just want to **declare, per route, who is allowed in** and **inject the identity** into your handlers. That's exactly what this module does, and nothing more.
 
-You can use either the npm or yarn command-line tool to install the `package`.    
-Use whichever is appropriate for your project in the examples below.
-
-### NPM
-
-```bash
-# @hhnest/granted
-npm install @hhnest/granted --save 
+```ts
+@Get('orders/:userId')
+@GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isUser('Param', 'userId'))))
+findOrders(@Username() me: string, @Roles() roles: string[]) { /* ... */ }
 ```
 
-### YARN
+## Features
+
+- 🛡️ **One decorator to secure a route** — `@GrantedTo(...specs)`, applied by a global guard
+- 🧩 **Composable boolean specifications** — `and`, `or`, `not`, `hasRole`, `isAuthenticated`, `isUser`, `isTrue`, `isFalse`
+- 💉 **Parameter decorators** — `@Username()`, `@Roles()`, `@Tenant()`
+- 🔌 **Pluggable user-info provider** — read from HTTP headers (default) or from a verified JWT
+- 🔑 **JWT verification** with **IdP presets** — RFC 9068/SCIM, Azure AD/Entra, Keycloak, Okta — or a fully custom claim mapping
+- 🏢 **Multi-tenant aware** — inject the caller's tenant for data-scoping (orthogonal to authorization)
+- 🪶 **Tiny & dependency-light** — just `jsonwebtoken`; works on NestJS 10 & 11
+
+## Installation
 
 ```bash
-# @hhnest/granted
-yarn add @hhnest/granted
+npm install @softwarity/nestjs-granted
+# peer deps you probably already have
+npm install @nestjs/common @nestjs/core @nestjs/platform-express rxjs reflect-metadata
 ```
 
 ### Peer dependencies
 
 | name | version |
 |---|---|
-| @nestjs/common | ^10.0.0 |
-| @nestjs/core | ^10.0.0 |
-| @nestjs/platform-express | ^10.0.0 |
+| @nestjs/common | >=10 <12 |
+| @nestjs/core | >=10 <12 |
+| @nestjs/platform-express | >=10 <12 |
+| rxjs | ^7.5 |
+| reflect-metadata | ^0.1.13 \|\| ^0.2 |
 
-### Dependencies
-| name | version |
-|---|---|
-| jsonwebtoken | ^9.0.0 |
+---
 
-## Configuration
+## Getting started
 
-Just import the module `GrantedModule`, specify the implementation for fetch username, roles  and you can use the `annotations`.   
+### 1. Register the module
 
+```ts
+import { Module } from '@nestjs/common';
+import { GrantedModule } from '@softwarity/nestjs-granted';
 
-Header provider
-`AppModule.ts`
-```typescript
 @Module({
-  // Declare the module and define the option apply (for apply or not the security)
   imports: [
-    GrantedModule.forRoot({apply: environment.applyAuthGuard}),
+    // `apply: false` loads the module but disables enforcement (handy per environment).
+    GrantedModule.forRoot({ apply: true }),
   ],
 })
 export class AppModule {}
 ```
 
-Jwt Provider
-`AppModule.ts`
-```typescript
+By default the module reads the identity from HTTP headers (`username`, `roles`, `tenant`). To decode it from a JWT instead, pass a `GrantedInfoJwtProvider` (see below).
+
+### 2. Inject identity into your handlers
+
+```ts
+@Get('me')
+me(
+  @Username() username: string,
+  @Roles() roles: string[],
+  @Tenant() tenant: string | undefined,
+) {
+  return { username, roles, tenant };
+}
+```
+
+### 3. Secure endpoints
+
+```ts
+@Get('admin')
+@GrantedTo(and(isAuthenticated(), hasRole('ADMIN')))
+adminOnly() { /* ... */ }
+```
+
+A route with **no** `@GrantedTo` is open. A route with `@GrantedTo(...)` passes only if **every** spec returns `true`.
+
+---
+
+## Boolean specifications
+
+`@GrantedTo` takes one or more `BooleanSpec`. Combine them freely:
+
+```ts
+GrantedTo(...specs: BooleanSpec[])     // all must pass
+
+and(...specs)                          // every spec passes
+or(...specs)                           // at least one passes
+not(spec)                              // inverts a spec
+isTrue()                               // always allow
+isFalse()                              // always deny
+hasRole(role: string)                  // role is in the user's roles
+isAuthenticated()                      // username is set and not 'anonymous'
+isUser(type: 'Param'|'Query'|'Body', field: string)  // request value === username
+```
+
+`isUser` compares the current username with a value taken from the request — a route param, a query param, or a (dotted) body path — to express *"you may only touch your own resource"*:
+
+```ts
+@Patch('users/:userId/profile')
+@GrantedTo(or(hasRole('ADMIN'), isUser('Param', 'userId')))
+update(@Param('userId') userId: string) { /* ... */ }
+```
+
+> Authorization is driven by `username` and `roles` only. `tenant` is **not** an authorization input — it's injected for data-scoping (e.g. a `WHERE tenant_id = ?` clause), an orthogonal concern.
+
+---
+
+## User-info providers
+
+The identity is resolved by an `IGrantedInfoProvider`. Two are shipped.
+
+### `GrantedInfoProvider` (default) — from headers
+
+| info | source header | default |
+|---|---|---|
+| `username` | `username` | `anonymous` |
+| `roles` | `roles` (JSON array) | `[]` |
+| `tenant` | `tenant` | `undefined` |
+
+### `GrantedInfoJwtProvider` — from a verified JWT
+
+Reads the `Authorization: Bearer <token>` header, verifies the token with your public key, and maps the claims to `username` / `roles` / `tenant`. Claim names are configurable (dotted paths supported for nested claims), with presets for common IdPs:
+
+```ts
+import { GrantedModule, GrantedInfoJwtProvider } from '@softwarity/nestjs-granted';
+
 @Module({
-  // Declare the module and define the option apply (for apply or not the security) and GrantedInfoJwtProvider (for decode user info from jwt token)
   imports: [
-    GrantedModule.forRoot({apply: environment.applyAuthGuard, infoProvider: new GrantedInfoJwtProvider({
-      algorithm: 'RS256', // RS256, EC256, PS256
-      pemFile: 'path/jwt_public_key.pem',
-      // or
-      base64Key: '-----BEGIN PUBLIC KEY-----\nBASE64KEYENCODED\n-----END PUBLIC KEY-----'
-    })}),
+    GrantedModule.forRoot({
+      apply: true,
+      // Preset — you only provide the key material:
+      infoProvider: GrantedInfoJwtProvider.keycloak({
+        algorithm: 'RS256',
+        pemFile: 'config/jwt_public_key.pem',
+      }),
+    }),
   ],
 })
 export class AppModule {}
 ```
 
-## Use
+#### Presets
 
-### Inject informations
+| Factory | username | roles | tenant |
+|---|---|---|---|
+| `GrantedInfoJwtProvider.rfc9068(...)` | `sub` | `roles` | `tenant` |
+| `GrantedInfoJwtProvider.azureAd(...)` | `preferred_username` | `roles` | `tid` |
+| `GrantedInfoJwtProvider.keycloak(...)` | `preferred_username` | `realm_access.roles` | `tenant` |
+| `GrantedInfoJwtProvider.okta(...)` | `sub` | `groups` | `tenant` |
 
-The module allow you to inject informations in your endpoints:
+Every field is overridable, e.g. `GrantedInfoJwtProvider.okta({ pemFile, usernameClaim: 'email' })`.
 
-```typescript
-@Get('username')
-username(@Username() userId: string): Observable<string> {
-    return of(userId);
-}
+#### Custom claim mapping
 
-@Get('roles')
-roles(@Roles() roles: string[]): Observable<string[]> {
-    return of(roles);
-}
-
-@Get('groups')
-groups(@Groups() groups: string[]): Observable<string[]> {
-    return of(groups);
-}
-@Get('locale')
-groups(@Locale() locale: string): Observable<string> {
-    return of(locale);
-}
+```ts
+new GrantedInfoJwtProvider({
+  algorithm: 'RS256',
+  pemFile: 'config/jwt_public_key.pem',
+  // or base64Key: '-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----',
+  usernameClaim: 'sub',              // default 'sub'
+  rolesClaim: 'realm_access.roles',  // default 'roles' — dotted paths supported
+  tenantClaim: 'tid',                // default 'tenant'
+});
 ```
 
-### Secure endpoints
+> A token that is missing, malformed, or fails verification yields an **anonymous** request — it's then up to your specs (e.g. `isAuthenticated()`) to reject it. The provider never logs the token or the key material.
 
-```typescript
-@Get('username')
-@GrantedTo(and(isAuthenticated(), hasRole('GET_USERNAME')))
-username(@Username() userId: string): Observable<string> {
-    return of(userId);
-}
-```
+### Custom provider
 
-### Details
+Implement `IGrantedInfoProvider` to read the identity from anywhere. Handle both `Request` (route handlers) and `IncomingMessage` (param decorators run earlier in the pipeline):
 
-```typescript
-GrantedTo(...booleanSpecs: BooleanSpec[])
-```
-
-```typescript
-// AndSpec
-and(...booleanSpecs: BooleanSpec[]): BooleanSpec
-// IsTrueSpec
-isTrue(): BooleanSpec
-// HasRoleSpec
-hasRole(role: string): BooleanSpec
-// IsAuthenticatedSpec
-isAuthenticated(): BooleanSpec
-// IsFalseSpec
-isFalse(): BooleanSpec
-// NotSpec
-not(booleanSpec: BooleanSpec): BooleanSpec
-// OrSpec
-or(...booleanSpecs: BooleanSpec[]): BooleanSpec
-// IsUserSpec
-isUser(type: 'Param' | 'Query' | 'Body', field?: string): BooleanSpec
-```
-### User informations provider
-
-2 providers information are provide by `GrantedModule`
-
-- `GrantedInfoProvider`
-- `GrantedInfoJwtProvider`
-
-`GrantedInfoProvider` get user information directly in headers
-
- - `username`
- - `roles`
- - `groups`
- - `locale`
-
-`GrantedInfoJwtProvider` get information from JWT token (since 1.0.3)
-
-if token provide `username`/`roles`/`groups` informations will be available
-
-`locale` is still get from header
-
-You have to provide a public RSA key for verify the token
-
-`AppModule.ts`
-```typescript
-import { GrantedModule } from '@hhnest/granted';
-import { GrantedInfoJwtProvider } from '@hhnest/granted/services';
-
-@Module({
-  imports: [
-    GrantedModule.forRoot({infoProvider: new GrantedInfoJwtProvider('-----BEGIN PUBLIC KEY-----\nMIIBIj...IDAQAB\n-----END PUBLIC KEY-----', 'RS256')}),
-  ],
-})
-export class AppModule {}
-```
-
-### Extends
-
-AppRbacGuard read information in http headers request
-
-username, roles, groups and accept-language
-
-If you want to extract information from other behaviors, just write an other implementation of IGrantedInfoProvider
-and set on option
-
-`AppModule.ts`
-```typescript
-@Module({
-  // Declare the module and define the option apply (for apply or not the security)
-  providers: [MyGrantedInfoProvider],
-  imports: [
-    GrantedModule.forRoot({apply: environment.applyAuthGuard, infoProvider: new MyGrantedInfoProvider()}),
-  ],
-})
-export class AppModule {}
-```
-
-This is actualy the default provider that get information simply from headers
-
-Note that you have to manage 2 cases: `Request` and `IncomingMessage`
-
-```typescript
+```ts
 export class MyGrantedInfoProvider implements IGrantedInfoProvider {
+  getUsernameFromRequest(req: Request): string { return req.header('x-user') || 'anonymous'; }
+  getRolesFromRequest(req: Request): string[] { return JSON.parse(req.header('x-roles') || '[]'); }
+  getTenantFromRequest(req: Request): string | undefined { return req.header('x-tenant') || undefined; }
 
-    getUsernameFromRequest(request: Request): string {
-        return JSON.parse(request.header('username') || 'anonymous');
-    }
-
-    getRolesFromRequest(request: Request): string[] {
-        return JSON.parse(request.header('roles') || '[]');
-    }
-
-    getGroupsFromRequest(request: Request): string[] {
-        return JSON.parse(request.header('groups') || '[]');
-    }
-
-    getLocaleFromRequest(request: Request): string {
-        return request.header('accept-language') || 'en';
-    }
-
-    getUsernameFromIncomingMessage(incomingMessage: IncomingMessage): string {
-        return JSON.parse(incomingMessage.headers('username') || 'anonymous');
-    }
-
-    getRolesFromIncomingMessage(incomingMessage: IncomingMessage): string[] {
-        return JSON.parse(incomingMessage.headers['roles'] as string || '[]')
-    }
-
-    getGroupsFromIncomingMessage(incomingMessage: IncomingMessage): string[] {
-        return JSON.parse(incomingMessage.headers['groups'] as string || '[]')
-    }
-
-    getLocaleFromIncomingMessage(incomingMessage: IncomingMessage): string {
-        return incomingMessage.headers['accept-language'] || 'en';
-    }
+  getUsernameFromIncomingMessage(msg: IncomingMessage): string { return (msg.headers['x-user'] as string) || 'anonymous'; }
+  getRolesFromIncomingMessage(msg: IncomingMessage): string[] { return JSON.parse((msg.headers['x-roles'] as string) || '[]'); }
+  getTenantFromIncomingMessage(msg: IncomingMessage): string | undefined { return (msg.headers['x-tenant'] as string) || undefined; }
 }
 ```
+
+```ts
+GrantedModule.forRoot({ apply: true, infoProvider: new MyGrantedInfoProvider() })
+```
+
+---
+
+## License
+
+MIT © [Softwarity](https://www.softwarity.io/)

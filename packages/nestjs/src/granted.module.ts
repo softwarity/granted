@@ -8,15 +8,15 @@ import { AppGuard } from './security/app.guard';
 @Module({})
 export class GrantedModule {
   static forRoot(options?: GrantedModuleOptions): DynamicModule {
-    const opts: GrantedModuleOptions = {apply: true, infoProvider: new GrantedInfoProvider(), ...(options || {})};
+    const opts: GrantedModuleOptions = { apply: true, infoProvider: new GrantedInfoProvider(), ...(options || {}) };
     return {
       module: GrantedModule,
       providers: [
-        { provide: 'GRANTED_MODULE_OPTIONS', useValue: opts }, 
+        { provide: 'GRANTED_MODULE_OPTIONS', useValue: opts },
         { provide: APP_INTERCEPTOR, useClass: GlobalInterceptor },
-        { provide: APP_GUARD, useClass: AppGuard }
+        { provide: APP_GUARD, useClass: AppGuard },
       ],
-      exports: ['GRANTED_MODULE_OPTIONS']
+      exports: ['GRANTED_MODULE_OPTIONS'],
     };
   }
 }

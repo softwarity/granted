@@ -1,7 +1,6 @@
-import { Type } from "@nestjs/common";
-import { IGrantedInfoProvider } from "src/services";
+import { IGrantedInfoProvider } from '../services';
 
 export class GrantedModuleOptions {
-    apply?: boolean;
-    infoProvider?: IGrantedInfoProvider;
+  apply?: boolean;
+  infoProvider?: IGrantedInfoProvider;
 }
