@@ -23,6 +23,6 @@ export class AppComponent {
     { path: '/ownership', label: 'Resource ownership', icon: 'verified_user' },
     { path: '/boolean-specs', label: 'Boolean specifications', icon: 'rule' },
     { path: '/parameter-decorators', label: 'Parameter decorators', icon: 'tune' },
-    { path: '/info-providers', label: 'Info providers', icon: 'badge' },
+    { path: '/info-providers', label: 'Principal providers', icon: 'badge' },
   ];
 }

@@ -182,8 +182,8 @@ export class AdminController &#123;
     <p>
       By default the identity is read from request headers (<code>username</code>, <code>roles</code>,
       <code>tenant</code>). To decode it from a verified JWT instead, pass a
-      <code>GrantedInfoJwtProvider</code> (with presets for Azure AD, Keycloak, Okta, RFC 9068) — or
-      implement your own. See <a routerLink="/info-providers">Info providers</a>.
+      <code>GrantedJwtPrincipalProvider</code> (with presets for Azure AD, Keycloak, Okta, RFC 9068) — or
+      implement your own. See <a routerLink="/info-providers">Principal providers</a>.
     </p>
 
     <h3>What's next</h3>
@@ -191,7 +191,7 @@ export class AdminController &#123;
       Read <a routerLink="/configuration">Configuration</a> for the module options,
       <a routerLink="/securing-endpoints">Securing endpoints</a> for the guard semantics and recipes,
       <a routerLink="/boolean-specs">Boolean specifications</a> for the full spec reference, or
-      <a routerLink="/info-providers">Info providers</a> for header / JWT / custom identity sources.
+      <a routerLink="/info-providers">Principal providers</a> for header / JWT / custom identity sources.
     </p>
   `,
 })

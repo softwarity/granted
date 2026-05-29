@@ -1,7 +1,7 @@
 import { Request } from 'express';
 import { IncomingMessage } from 'http';
 
-export interface IGrantedInfoProvider {
+export interface IGrantedPrincipalProvider {
   getUsernameFromRequest(request: Request): string;
   getRolesFromRequest(request: Request): string[];
   getTenantFromRequest(request: Request): string | undefined;

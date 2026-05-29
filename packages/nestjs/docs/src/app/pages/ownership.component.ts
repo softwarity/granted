@@ -93,7 +93,7 @@ updateProfile(&#64;Param('userId') userId: string) &#123; /* userId === caller, 
       <code>isTenant</code> is the precise analogue of <code>isUser</code>. It compares the
       <strong>requested</strong> tenant (from the URL/query/body — i.e. attacker-controlled) against the
       caller's <strong>claimed</strong> tenant (resolved by the
-      <a routerLink="/info-providers">info provider</a> from the verified token or trusted headers —
+      <a routerLink="/info-providers">principal provider</a> from the verified token or trusted headers —
       <em>never</em> the payload):
     </p>
 

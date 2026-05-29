@@ -31,13 +31,13 @@ import { CodeComponent } from '../code/code.component';
           </td>
         </tr>
         <tr>
-          <td><code>infoProvider</code></td>
-          <td><code>IGrantedInfoProvider</code></td>
-          <td><code>new GrantedInfoProvider()</code></td>
+          <td><code>principalProvider</code></td>
+          <td><code>IGrantedPrincipalProvider</code></td>
+          <td><code>new GrantedPrincipalProvider()</code></td>
           <td>
             Strategy that resolves the caller's identity. Defaults to reading HTTP headers. Swap for
-            <code>GrantedInfoJwtProvider</code> or a custom one — see
-            <a routerLink="/info-providers">Info providers</a>.
+            <code>GrantedJwtPrincipalProvider</code> or a custom one — see
+            <a routerLink="/info-providers">Principal providers</a>.
           </td>
         </tr>
         <tr>
@@ -91,7 +91,7 @@ import { CodeComponent } from '../code/code.component';
     <h3>Minimal</h3>
     <app-code lang="ts">GrantedModule.forRoot()</app-code>
     <p>
-      Equivalent to <code>forRoot(&#123; apply: true, infoProvider: new GrantedInfoProvider() &#125;)</code>
+      Equivalent to <code>forRoot(&#123; apply: true, principalProvider: new GrantedPrincipalProvider() &#125;)</code>
       — enforcement on, identity read from headers.
     </p>
 
@@ -103,13 +103,13 @@ import { CodeComponent } from '../code/code.component';
     <app-code lang="ts">GrantedModule.forRoot(&#123; apply: process.env['ENFORCE_RBAC'] !== 'false' &#125;)</app-code>
 
     <h3>Decode identity from a JWT</h3>
-    <app-code lang="ts">import &#123; GrantedModule, GrantedInfoJwtProvider &#125; from '&#64;softwarity/nestjs-granted';
+    <app-code lang="ts">import &#123; GrantedModule, GrantedJwtPrincipalProvider &#125; from '&#64;softwarity/nestjs-granted';
 
 &#64;Module(&#123;
   imports: [
     GrantedModule.forRoot(&#123;
       apply: true,
-      infoProvider: new GrantedInfoJwtProvider(&#123;
+      principalProvider: new GrantedJwtPrincipalProvider(&#123;
         algorithm: 'RS256',
         pemFile: 'config/jwt_public_key.pem',
       &#125;),
@@ -130,7 +130,7 @@ export class AppModule &#123;&#125;</app-code>
     <ul>
       <li><code>APP_GUARD</code> → <code>AppGuard</code> — evaluates <code>&#64;GrantedTo</code> specs.</li>
       <li><code>APP_INTERCEPTOR</code> → <code>GlobalInterceptor</code> — attaches the resolved
-        <code>infoProvider</code> to the request so parameter decorators can read it.</li>
+        <code>principalProvider</code> to the request so parameter decorators can read it.</li>
       <li><code>'GRANTED_MODULE_OPTIONS'</code> — the resolved options, exported for advanced use.</li>
     </ul>
   `,

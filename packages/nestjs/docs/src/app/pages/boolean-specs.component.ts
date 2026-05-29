@@ -118,7 +118,7 @@ isUser('Body', 'customer.id')    // request.body.customer.id === username</app-c
     <h3>isTenant — block cross-tenant access</h3>
     <p>
       The multi-tenant counterpart of <code>isUser</code>: it matches a request value against the
-      <em>caller's</em> tenant (resolved by the <a routerLink="/info-providers">info provider</a>), to stop
+      <em>caller's</em> tenant (resolved by the <a routerLink="/info-providers">principal provider</a>), to stop
       a user of tenant A from reaching another tenant's resources.
     </p>
     <app-code lang="ts">// admin can reach any tenant; everyone else only their own

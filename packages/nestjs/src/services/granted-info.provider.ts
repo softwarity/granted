@@ -1,8 +1,8 @@
 import { Request } from 'express';
 import { IncomingMessage } from 'http';
-import { IGrantedInfoProvider } from './igranted-info.provider';
+import { IGrantedPrincipalProvider } from './igranted-info.provider';
 
-export interface GrantedInfoProviderConfig {
+export interface GrantedPrincipalProviderConfig {
   /**
    * How the `roles` header is encoded:
    *  - `'json'` (default): a JSON array, e.g. `["ROLE1","ROLE2"]`
@@ -19,8 +19,8 @@ export interface GrantedInfoProviderConfig {
  *  - `roles`    header — JSON array or CSV depending on `rolesFormat` (fallback `[]`)
  *  - `tenant`   header (optional, multi-tenant context)
  */
-export class GrantedInfoProvider implements IGrantedInfoProvider {
-  constructor(private readonly config: GrantedInfoProviderConfig = {}) {}
+export class GrantedPrincipalProvider implements IGrantedPrincipalProvider {
+  constructor(private readonly config: GrantedPrincipalProviderConfig = {}) {}
 
   getUsernameFromRequest(request: Request): string {
     return request.header('username') || 'anonymous';

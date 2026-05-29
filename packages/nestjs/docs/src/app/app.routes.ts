@@ -28,7 +28,7 @@ export const routes: Routes = [
   },
   {
     path: 'info-providers',
-    loadComponent: () => import('./pages/info-providers.component').then((m) => m.InfoProvidersComponent),
+    loadComponent: () => import('./pages/info-providers.component').then((m) => m.PrincipalProvidersComponent),
   },
   { path: '**', redirectTo: '' },
 ];

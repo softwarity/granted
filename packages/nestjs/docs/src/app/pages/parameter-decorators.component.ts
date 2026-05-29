@@ -11,7 +11,7 @@ import { CodeComponent } from '../code/code.component';
     <p>
       Three parameter decorators inject the resolved identity into your route handlers. Order doesn't
       matter — resolution is by decorator, not by position. Each one delegates to the configured
-      <a routerLink="/info-providers">info provider</a>, so the <em>source</em> of the value (headers vs.
+      <a routerLink="/info-providers">principal provider</a>, so the <em>source</em> of the value (headers vs.
       JWT vs. custom) is decided once in <code>forRoot</code>, not at the call site.
     </p>
 
@@ -101,7 +101,7 @@ listInvoices(&#64;Tenant() tenant: string | undefined) &#123;
     <p>
       Want <code>&#64;Roles()</code> to come from a JWT claim (e.g. <code>groups</code>) instead of a
       header? You don't touch the handlers — you swap the provider in <code>forRoot</code>. See
-      <a routerLink="/info-providers">Info providers</a>.
+      <a routerLink="/info-providers">Principal providers</a>.
     </p>
   `,
 })

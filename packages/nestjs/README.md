@@ -28,7 +28,7 @@ findOrders(@Username() me: string, @Roles() roles: string[]) { /* ... */ }
 - 💉 **Parameter decorators** — `@Username()`, `@Roles()`, `@Tenant()`
 - 🪜 **Role hierarchy** — declare that one role implies others (`ADMIN ⇒ MANAGER ⇒ USER`); checks and injection see the expanded set
 - 🧹 **Known-roles filtering** — keep only the roles your module owns, ignoring those a shared token carries for other services
-- 🔌 **Pluggable user-info provider** — HTTP headers (JSON or CSV roles) or a verified JWT
+- 🔌 **Pluggable principal provider** — HTTP headers (JSON or CSV roles) or a verified JWT
 - 🔑 **JWT verification** with **IdP presets** — RFC 9068/SCIM, Azure AD/Entra, Keycloak, Okta — or a fully custom claim mapping
 - 🏢 **Multi-tenant aware** — `@Tenant()` injection plus `isTenant` to block cross-tenant access
 - 🪶 **Tiny & dependency-light** — just `jsonwebtoken`; works on NestJS 10 & 11
@@ -70,7 +70,7 @@ import { GrantedModule } from '@softwarity/nestjs-granted';
 export class AppModule {}
 ```
 
-By default the module reads the identity from HTTP headers (`username`, `roles`, `tenant`). To decode it from a JWT instead, pass a `GrantedInfoJwtProvider` (see below).
+By default the module reads the identity from HTTP headers (`username`, `roles`, `tenant`). To decode it from a JWT instead, pass a `GrantedJwtPrincipalProvider` (see below).
 
 ### 2. Inject identity into your handlers
 
@@ -182,11 +182,11 @@ GrantedModule.forRoot({
 
 ---
 
-## User-info providers
+## Principal providers
 
-The identity is resolved by an `IGrantedInfoProvider`. Two are shipped.
+The identity is resolved by an `IGrantedPrincipalProvider`. Two are shipped.
 
-### `GrantedInfoProvider` (default) — from headers
+### `GrantedPrincipalProvider` (default) — from headers
 
 | info | source header | default |
 |---|---|---|
@@ -197,28 +197,28 @@ The identity is resolved by an `IGrantedInfoProvider`. Two are shipped.
 The `roles` header is a JSON array by default. If your gateway sends a comma-separated string (`roles: ADMIN, USER`), set `rolesFormat: 'csv'`:
 
 ```ts
-import { GrantedModule, GrantedInfoProvider } from '@softwarity/nestjs-granted';
+import { GrantedModule, GrantedPrincipalProvider } from '@softwarity/nestjs-granted';
 
 GrantedModule.forRoot({
-  infoProvider: new GrantedInfoProvider({ rolesFormat: 'csv' }), // default: 'json'
+  principalProvider: new GrantedPrincipalProvider({ rolesFormat: 'csv' }), // default: 'json'
 });
 ```
 
 > This option is specific to the header provider — JWT roles come from a claim, already an array.
 
-### `GrantedInfoJwtProvider` — from a verified JWT
+### `GrantedJwtPrincipalProvider` — from a verified JWT
 
 Reads the `Authorization: Bearer <token>` header, verifies the token with your public key, and maps the claims to `username` / `roles` / `tenant`. Claim names are configurable (dotted paths supported for nested claims), with presets for common IdPs:
 
 ```ts
-import { GrantedModule, GrantedInfoJwtProvider } from '@softwarity/nestjs-granted';
+import { GrantedModule, GrantedJwtPrincipalProvider } from '@softwarity/nestjs-granted';
 
 @Module({
   imports: [
     GrantedModule.forRoot({
       apply: true,
       // Preset — you only provide the key material:
-      infoProvider: GrantedInfoJwtProvider.keycloak({
+      principalProvider: GrantedJwtPrincipalProvider.keycloak({
         algorithm: 'RS256',
         pemFile: 'config/jwt_public_key.pem',
       }),
@@ -232,17 +232,17 @@ export class AppModule {}
 
 | Factory | username | roles | tenant |
 |---|---|---|---|
-| `GrantedInfoJwtProvider.rfc9068(...)` | `sub` | `roles` | `tenant` |
-| `GrantedInfoJwtProvider.azureAd(...)` | `preferred_username` | `roles` | `tid` |
-| `GrantedInfoJwtProvider.keycloak(...)` | `preferred_username` | `realm_access.roles` | `tenant` |
-| `GrantedInfoJwtProvider.okta(...)` | `sub` | `groups` | `tenant` |
+| `GrantedJwtPrincipalProvider.rfc9068(...)` | `sub` | `roles` | `tenant` |
+| `GrantedJwtPrincipalProvider.azureAd(...)` | `preferred_username` | `roles` | `tid` |
+| `GrantedJwtPrincipalProvider.keycloak(...)` | `preferred_username` | `realm_access.roles` | `tenant` |
+| `GrantedJwtPrincipalProvider.okta(...)` | `sub` | `groups` | `tenant` |
 
-Every field is overridable, e.g. `GrantedInfoJwtProvider.okta({ pemFile, usernameClaim: 'email' })`.
+Every field is overridable, e.g. `GrantedJwtPrincipalProvider.okta({ pemFile, usernameClaim: 'email' })`.
 
 #### Custom claim mapping
 
 ```ts
-new GrantedInfoJwtProvider({
+new GrantedJwtPrincipalProvider({
   algorithm: 'RS256',
   pemFile: 'config/jwt_public_key.pem',
   // or base64Key: '-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----',
@@ -256,10 +256,10 @@ new GrantedInfoJwtProvider({
 
 ### Custom provider
 
-Implement `IGrantedInfoProvider` to read the identity from anywhere. Handle both `Request` (route handlers) and `IncomingMessage` (param decorators run earlier in the pipeline):
+Implement `IGrantedPrincipalProvider` to read the identity from anywhere. Handle both `Request` (route handlers) and `IncomingMessage` (param decorators run earlier in the pipeline):
 
 ```ts
-export class MyGrantedInfoProvider implements IGrantedInfoProvider {
+export class MyGrantedPrincipalProvider implements IGrantedPrincipalProvider {
   getUsernameFromRequest(req: Request): string { return req.header('x-user') || 'anonymous'; }
   getRolesFromRequest(req: Request): string[] { return JSON.parse(req.header('x-roles') || '[]'); }
   getTenantFromRequest(req: Request): string | undefined { return req.header('x-tenant') || undefined; }
@@ -271,7 +271,7 @@ export class MyGrantedInfoProvider implements IGrantedInfoProvider {
 ```
 
 ```ts
-GrantedModule.forRoot({ apply: true, infoProvider: new MyGrantedInfoProvider() })
+GrantedModule.forRoot({ apply: true, principalProvider: new MyGrantedPrincipalProvider() })
 ```
 
 ---

@@ -2,7 +2,7 @@ import { Request } from 'express';
 import * as fs from 'fs';
 import { IncomingMessage } from 'http';
 import { Algorithm, decode, verify } from 'jsonwebtoken';
-import { IGrantedInfoProvider } from './igranted-info.provider';
+import { IGrantedPrincipalProvider } from './igranted-info.provider';
 
 /** Key material + signature algorithm — the only thing a preset can't infer. */
 export interface JwtKeyConfig {
@@ -27,7 +27,7 @@ export interface JwtClaimMapping {
   tenantClaim?: string;
 }
 
-export type GrantedInfoJwtProviderConfig = JwtKeyConfig & JwtClaimMapping;
+export type GrantedJwtPrincipalProviderConfig = JwtKeyConfig & JwtClaimMapping;
 
 /** Claim mappings for well-known identity providers. Override any field as needed. */
 export const JWT_CLAIM_PRESETS = {
@@ -46,21 +46,21 @@ export const JWT_CLAIM_PRESETS = {
  * `Authorization: Bearer <token>` header.
  *
  * Use the constructor for a fully custom claim mapping, or one of the static
- * presets ({@link GrantedInfoJwtProvider.rfc9068}, `.azureAd`, `.keycloak`,
+ * presets ({@link GrantedJwtPrincipalProvider.rfc9068}, `.azureAd`, `.keycloak`,
  * `.okta`) which pre-fill the mapping so you only pass key material.
  *
  * A token that is missing, malformed, or fails verification yields an
  * anonymous request (empty claims) — it is then up to the `@GrantedTo` specs
  * to reject it.
  */
-export class GrantedInfoJwtProvider implements IGrantedInfoProvider {
+export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
   base64Key: string;
   algorithm: Algorithm;
   usernameClaim: string;
   rolesClaim: string;
   tenantClaim: string;
 
-  constructor(conf: GrantedInfoJwtProviderConfig) {
+  constructor(conf: GrantedJwtPrincipalProviderConfig) {
     this.base64Key = conf.base64Key;
     this.algorithm = conf.algorithm || 'RS256';
     this.usernameClaim = conf.usernameClaim || 'sub';
@@ -72,23 +72,23 @@ export class GrantedInfoJwtProvider implements IGrantedInfoProvider {
   }
 
   /** Preset for RFC 9068 / SCIM access tokens. */
-  static rfc9068(conf: JwtKeyConfig & JwtClaimMapping): GrantedInfoJwtProvider {
-    return new GrantedInfoJwtProvider({ ...JWT_CLAIM_PRESETS.rfc9068, ...conf });
+  static rfc9068(conf: JwtKeyConfig & JwtClaimMapping): GrantedJwtPrincipalProvider {
+    return new GrantedJwtPrincipalProvider({ ...JWT_CLAIM_PRESETS.rfc9068, ...conf });
   }
 
   /** Preset for Microsoft Entra ID (Azure AD). */
-  static azureAd(conf: JwtKeyConfig & JwtClaimMapping): GrantedInfoJwtProvider {
-    return new GrantedInfoJwtProvider({ ...JWT_CLAIM_PRESETS.azureAd, ...conf });
+  static azureAd(conf: JwtKeyConfig & JwtClaimMapping): GrantedJwtPrincipalProvider {
+    return new GrantedJwtPrincipalProvider({ ...JWT_CLAIM_PRESETS.azureAd, ...conf });
   }
 
   /** Preset for Keycloak (realm roles under `realm_access.roles`). */
-  static keycloak(conf: JwtKeyConfig & JwtClaimMapping): GrantedInfoJwtProvider {
-    return new GrantedInfoJwtProvider({ ...JWT_CLAIM_PRESETS.keycloak, ...conf });
+  static keycloak(conf: JwtKeyConfig & JwtClaimMapping): GrantedJwtPrincipalProvider {
+    return new GrantedJwtPrincipalProvider({ ...JWT_CLAIM_PRESETS.keycloak, ...conf });
   }
 
   /** Preset for Okta (authorities as `groups`). */
-  static okta(conf: JwtKeyConfig & JwtClaimMapping): GrantedInfoJwtProvider {
-    return new GrantedInfoJwtProvider({ ...JWT_CLAIM_PRESETS.okta, ...conf });
+  static okta(conf: JwtKeyConfig & JwtClaimMapping): GrantedJwtPrincipalProvider {
+    return new GrantedJwtPrincipalProvider({ ...JWT_CLAIM_PRESETS.okta, ...conf });
   }
 
   getUsernameFromRequest(request: Request): string {

@@ -1,33 +1,33 @@
-import { GrantedInfoProvider } from '../src/services/granted-info.provider';
+import { GrantedPrincipalProvider } from '../src/services/granted-info.provider';
 import { expandRoles, resolveRoles } from '../src/security/roles.util';
 
 function reqWithHeaders(headers: Record<string, string>) {
   return { header: (name: string) => headers[name.toLowerCase()], headers } as any;
 }
 
-describe('GrantedInfoProvider — roles format', () => {
+describe('GrantedPrincipalProvider — roles format', () => {
   it('parses a JSON array by default', () => {
-    const provider = new GrantedInfoProvider();
+    const provider = new GrantedPrincipalProvider();
     expect(provider.getRolesFromRequest(reqWithHeaders({ roles: '["ADMIN","USER"]' }))).toEqual(['ADMIN', 'USER']);
   });
 
   it('parses a CSV string when rolesFormat is csv', () => {
-    const provider = new GrantedInfoProvider({ rolesFormat: 'csv' });
+    const provider = new GrantedPrincipalProvider({ rolesFormat: 'csv' });
     expect(provider.getRolesFromRequest(reqWithHeaders({ roles: 'ADMIN, USER , ACCOUNTANT' }))).toEqual(['ADMIN', 'USER', 'ACCOUNTANT']);
   });
 
   it('csv: trims blanks and ignores empty segments', () => {
-    const provider = new GrantedInfoProvider({ rolesFormat: 'csv' });
+    const provider = new GrantedPrincipalProvider({ rolesFormat: 'csv' });
     expect(provider.getRolesFromRequest(reqWithHeaders({ roles: ' ADMIN ,,  , USER ' }))).toEqual(['ADMIN', 'USER']);
   });
 
   it('returns [] when the header is absent (both formats)', () => {
-    expect(new GrantedInfoProvider().getRolesFromRequest(reqWithHeaders({}))).toEqual([]);
-    expect(new GrantedInfoProvider({ rolesFormat: 'csv' }).getRolesFromRequest(reqWithHeaders({}))).toEqual([]);
+    expect(new GrantedPrincipalProvider().getRolesFromRequest(reqWithHeaders({}))).toEqual([]);
+    expect(new GrantedPrincipalProvider({ rolesFormat: 'csv' }).getRolesFromRequest(reqWithHeaders({}))).toEqual([]);
   });
 
   it('csv format also applies to IncomingMessage', () => {
-    const provider = new GrantedInfoProvider({ rolesFormat: 'csv' });
+    const provider = new GrantedPrincipalProvider({ rolesFormat: 'csv' });
     expect(provider.getRolesFromIncomingMessage({ headers: { roles: 'A,B' } } as any)).toEqual(['A', 'B']);
   });
 });

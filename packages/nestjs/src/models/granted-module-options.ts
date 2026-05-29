@@ -1,10 +1,10 @@
-import { IGrantedInfoProvider } from '../services';
+import { IGrantedPrincipalProvider } from '../services';
 
 export class GrantedModuleOptions {
   /** Master switch. When `false`, the guard lets every request through. Defaults to `true`. */
   apply?: boolean;
-  /** Strategy resolving the caller's identity. Defaults to a header-based `GrantedInfoProvider`. */
-  infoProvider?: IGrantedInfoProvider;
+  /** Strategy resolving the caller's identity. Defaults to a header-based `GrantedPrincipalProvider`. */
+  principalProvider?: IGrantedPrincipalProvider;
   /**
    * Roles this module knows about. When set, any resolved role outside this set
    * is dropped — so a shared token carrying roles for other modules doesn't

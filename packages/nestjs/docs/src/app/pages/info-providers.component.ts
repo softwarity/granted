@@ -6,17 +6,17 @@ import { CodeComponent } from '../code/code.component';
   selector: 'app-info-providers',
   imports: [CodeComponent, RouterLink],
   template: `
-    <h2>Info providers</h2>
+    <h2>Principal providers</h2>
 
     <p>
-      An <strong>info provider</strong> is the strategy that resolves the caller's identity from the
-      request. It is set once via <code>forRoot(&#123; infoProvider &#125;)</code> and used by both the
+      An <strong>principal provider</strong> is the strategy that resolves the caller's identity from the
+      request. It is set once via <code>forRoot(&#123; principalProvider &#125;)</code> and used by both the
       <a routerLink="/securing-endpoints">guard</a> (for <code>username</code> / <code>roles</code>) and
       the <a routerLink="/parameter-decorators">parameter decorators</a>. Two implementations ship with
       the library; you can also write your own.
     </p>
 
-    <app-code lang="ts">interface IGrantedInfoProvider &#123;
+    <app-code lang="ts">interface IGrantedPrincipalProvider &#123;
   getUsernameFromRequest(request: Request): string;
   getRolesFromRequest(request: Request): string[];
   getTenantFromRequest(request: Request): string | undefined;
@@ -32,8 +32,8 @@ import { CodeComponent } from '../code/code.component';
       pipeline against the raw <code>IncomingMessage</code>. A custom provider must implement both.
     </div>
 
-    <h3>GrantedInfoProvider — from headers (default)</h3>
-    <p>Used automatically when you don't pass an <code>infoProvider</code>.</p>
+    <h3>GrantedPrincipalProvider — from headers (default)</h3>
+    <p>Used automatically when you don't pass an <code>principalProvider</code>.</p>
     <table>
       <thead><tr><th>Field</th><th>Source header</th><th>Default</th></tr></thead>
       <tbody>
@@ -42,7 +42,7 @@ import { CodeComponent } from '../code/code.component';
         <tr><td><code>tenant</code></td><td><code>tenant</code></td><td><code>undefined</code></td></tr>
       </tbody>
     </table>
-    <app-code lang="ts">GrantedModule.forRoot(&#123; apply: true &#125;); // GrantedInfoProvider is implied</app-code>
+    <app-code lang="ts">GrantedModule.forRoot(&#123; apply: true &#125;); // GrantedPrincipalProvider is implied</app-code>
     <p>
       A typical upstream (API gateway, OAuth2 proxy) sets these headers after authentication, e.g.
       <code>username: alice</code>, <code>roles: ["ADMIN","USER"]</code>.
@@ -54,14 +54,14 @@ import { CodeComponent } from '../code/code.component';
       string instead (<code>roles: ADMIN, USER</code>), construct the provider with
       <code>rolesFormat: 'csv'</code> — values are split on commas and trimmed:
     </p>
-    <app-code lang="ts">import &#123; GrantedModule, GrantedInfoProvider &#125; from '&#64;softwarity/nestjs-granted';
+    <app-code lang="ts">import &#123; GrantedModule, GrantedPrincipalProvider &#125; from '&#64;softwarity/nestjs-granted';
 
 GrantedModule.forRoot(&#123;
-  infoProvider: new GrantedInfoProvider(&#123; rolesFormat: 'csv' &#125;), // default: 'json'
+  principalProvider: new GrantedPrincipalProvider(&#123; rolesFormat: 'csv' &#125;), // default: 'json'
 &#125;);</app-code>
     <p class="callout">This option is specific to the header provider — JWT roles come from a claim, which is already an array (see <code>rolesClaim</code> below).</p>
 
-    <h3>GrantedInfoJwtProvider — from a verified JWT</h3>
+    <h3>GrantedJwtPrincipalProvider — from a verified JWT</h3>
     <p>
       Reads <code>Authorization: Bearer &lt;token&gt;</code>, verifies the signature with your public key,
       and maps the configured claims to <code>username</code> / <code>roles</code> / <code>tenant</code>.
@@ -77,20 +77,20 @@ GrantedModule.forRoot(&#123;
     <table>
       <thead><tr><th>Factory</th><th>username</th><th>roles</th><th>tenant</th></tr></thead>
       <tbody>
-        <tr><td><code>GrantedInfoJwtProvider.rfc9068(...)</code></td><td><code>sub</code></td><td><code>roles</code></td><td><code>tenant</code></td></tr>
-        <tr><td><code>GrantedInfoJwtProvider.azureAd(...)</code></td><td><code>preferred_username</code></td><td><code>roles</code></td><td><code>tid</code></td></tr>
-        <tr><td><code>GrantedInfoJwtProvider.keycloak(...)</code></td><td><code>preferred_username</code></td><td><code>realm_access.roles</code></td><td><code>tenant</code></td></tr>
-        <tr><td><code>GrantedInfoJwtProvider.okta(...)</code></td><td><code>sub</code></td><td><code>groups</code></td><td><code>tenant</code></td></tr>
+        <tr><td><code>GrantedJwtPrincipalProvider.rfc9068(...)</code></td><td><code>sub</code></td><td><code>roles</code></td><td><code>tenant</code></td></tr>
+        <tr><td><code>GrantedJwtPrincipalProvider.azureAd(...)</code></td><td><code>preferred_username</code></td><td><code>roles</code></td><td><code>tid</code></td></tr>
+        <tr><td><code>GrantedJwtPrincipalProvider.keycloak(...)</code></td><td><code>preferred_username</code></td><td><code>realm_access.roles</code></td><td><code>tenant</code></td></tr>
+        <tr><td><code>GrantedJwtPrincipalProvider.okta(...)</code></td><td><code>sub</code></td><td><code>groups</code></td><td><code>tenant</code></td></tr>
       </tbody>
     </table>
 
-    <app-code lang="ts">import &#123; GrantedModule, GrantedInfoJwtProvider &#125; from '&#64;softwarity/nestjs-granted';
+    <app-code lang="ts">import &#123; GrantedModule, GrantedJwtPrincipalProvider &#125; from '&#64;softwarity/nestjs-granted';
 
 &#64;Module(&#123;
   imports: [
     GrantedModule.forRoot(&#123;
       apply: true,
-      infoProvider: GrantedInfoJwtProvider.keycloak(&#123;
+      principalProvider: GrantedJwtPrincipalProvider.keycloak(&#123;
         algorithm: 'RS256',
         pemFile: 'config/jwt_public_key.pem',
       &#125;),
@@ -100,7 +100,7 @@ GrantedModule.forRoot(&#123;
 export class AppModule &#123;&#125;</app-code>
 
     <p>Any preset field can be overridden — e.g. read the username from <code>email</code> on Okta:</p>
-    <app-code lang="ts">GrantedInfoJwtProvider.okta(&#123; pemFile: 'config/key.pem', usernameClaim: 'email' &#125;);</app-code>
+    <app-code lang="ts">GrantedJwtPrincipalProvider.okta(&#123; pemFile: 'config/key.pem', usernameClaim: 'email' &#125;);</app-code>
 
     <h4>Custom claim mapping</h4>
     <p>No preset fits? Use the constructor directly:</p>
@@ -116,7 +116,7 @@ export class AppModule &#123;&#125;</app-code>
       </tbody>
     </table>
 
-    <app-code lang="ts">new GrantedInfoJwtProvider(&#123;
+    <app-code lang="ts">new GrantedJwtPrincipalProvider(&#123;
   algorithm: 'RS256',
   pemFile: 'config/jwt_public_key.pem',
   usernameClaim: 'sub',
@@ -133,15 +133,15 @@ export class AppModule &#123;&#125;</app-code>
 
     <h3>Custom provider</h3>
     <p>
-      Implement <code>IGrantedInfoProvider</code> to read identity from anywhere — a different header
+      Implement <code>IGrantedPrincipalProvider</code> to read identity from anywhere — a different header
       scheme, a session store, a service-mesh header set, etc. Handle both <code>Request</code> and
       <code>IncomingMessage</code>:
     </p>
-    <app-code lang="ts">import &#123; IGrantedInfoProvider &#125; from '&#64;softwarity/nestjs-granted';
+    <app-code lang="ts">import &#123; IGrantedPrincipalProvider &#125; from '&#64;softwarity/nestjs-granted';
 import &#123; Request &#125; from 'express';
 import &#123; IncomingMessage &#125; from 'http';
 
-export class HeaderProvider implements IGrantedInfoProvider &#123;
+export class HeaderProvider implements IGrantedPrincipalProvider &#123;
   getUsernameFromRequest(req: Request): string &#123;
     return req.header('x-user') || 'anonymous';
   &#125;
@@ -162,7 +162,7 @@ export class HeaderProvider implements IGrantedInfoProvider &#123;
     return (msg.headers['x-tenant'] as string) || undefined;
   &#125;
 &#125;</app-code>
-    <app-code lang="ts">GrantedModule.forRoot(&#123; apply: true, infoProvider: new HeaderProvider() &#125;);</app-code>
+    <app-code lang="ts">GrantedModule.forRoot(&#123; apply: true, principalProvider: new HeaderProvider() &#125;);</app-code>
   `,
 })
-export class InfoProvidersComponent {}
+export class PrincipalProvidersComponent {}

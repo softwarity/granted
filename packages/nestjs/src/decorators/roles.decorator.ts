@@ -2,7 +2,7 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { IncomingMessage } from 'http';
 import { GrantedModuleOptions } from '../models/granted-module-options';
 import { resolveRoles } from '../security/roles.util';
-import { IGrantedInfoProvider } from '../services';
+import { IGrantedPrincipalProvider } from '../services';
 
 /**
  * Injects the caller's roles, after the module's hierarchy expansion and
@@ -10,8 +10,8 @@ import { IGrantedInfoProvider } from '../services';
  */
 export const Roles = createParamDecorator((_config: void, ctx: ExecutionContext) => {
   const incomingMessage: IncomingMessage = ctx.switchToHttp().getRequest<IncomingMessage>();
-  const grantedInfoService: IGrantedInfoProvider = incomingMessage['grantedInfoService'];
+  const grantedPrincipalProvider: IGrantedPrincipalProvider = incomingMessage['grantedPrincipalProvider'];
   const options: GrantedModuleOptions = incomingMessage['grantedModuleOptions'] || {};
-  const rawRoles = grantedInfoService.getRolesFromIncomingMessage(incomingMessage);
+  const rawRoles = grantedPrincipalProvider.getRolesFromIncomingMessage(incomingMessage);
   return resolveRoles(rawRoles, options.roleHierarchy, options.knownRoles);
 });
