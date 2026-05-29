@@ -94,12 +94,22 @@ and(
 and(isAuthenticated(), not(hasRole('SUSPENDED')));</app-code>
 
     <h3>isUser in detail</h3>
+    <p>
+      <code>isUser</code> answers the question role checks <em>can't</em>: not "is the caller logged
+      in?" but "does the record this request points at belong to the caller?". It reads the target id
+      <strong>straight from the request</strong> and compares it to the caller's <code>username</code> —
+      closing the door on <strong>IDOR</strong>, where an authenticated user swaps an id in the URL or
+      body to act on someone else's data (see the
+      <a routerLink="/securing-endpoints">forged-POST scenario</a>).
+    </p>
     <app-code lang="ts">isUser('Param', 'userId')        // request.params.userId === username
 isUser('Query', 'owner')         // request.query.owner   === username
 isUser('Body', 'customer.id')    // request.body.customer.id === username</app-code>
     <p>
-      For <code>'Body'</code>, a missing path resolves to a non-match (returns <code>false</code>) rather
-      than throwing — a malformed or partial body can never accidentally grant access.
+      The compared value comes from whatever the client sent — so the check is precisely
+      <em>"the thing you're trying to read/update/create is yours"</em>. For <code>'Body'</code>, a
+      missing path resolves to a non-match (returns <code>false</code>) rather than throwing — a
+      malformed or partial body can never accidentally grant access.
     </p>
 
     <h3>isTenant — block cross-tenant access</h3>

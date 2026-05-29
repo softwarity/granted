@@ -113,20 +113,40 @@ isUser(type: 'Param'|'Query'|'Body', field: string)    // request value === user
 isTenant(type: 'Param'|'Query'|'Body', field: string)  // request value === caller's tenant
 ```
 
-`isUser` compares the current username with a value taken from the request — a route param, a query param, or a (dotted) body path — to express *"you may only touch your own resource"*:
+### Ownership checks — `isUser` / `isTenant`
+
+`isAuthenticated()` and `hasRole()` prove *who* the caller is. They do **not** prove that the record a request targets belongs to that caller — the classic **IDOR** hole, where a logged-in user just edits an id in the URL or body to hit someone else's data.
+
+Consider `POST /orders` protected only by `isAuthenticated()`. Mallory is a real, logged-in user; she forges the body so the order is booked on **Alice's** account:
+
+```bash
+curl -X POST https://api.example.com/orders \
+  -H 'authorization: Bearer <mallory-valid-token>' \
+  -d '{ "customer": { "id": "alice" }, "items": [ ... ] }'
+```
+
+Auth passes — the token is valid. Nothing checks that `body.customer.id` is *her own* id. `isUser` reads that value **from the request** and requires it to equal the caller's `username`:
 
 ```ts
+// the owner declared in the body must be the caller (admins excepted)
+@Post('orders')
+@GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isUser('Body', 'customer.id'))))
+createOrder() { /* body.customer.id === caller, or caller is ADMIN */ }
+
+// the resource owner in the URL must be the caller
 @Patch('users/:userId/profile')
 @GrantedTo(or(hasRole('ADMIN'), isUser('Param', 'userId')))
 update(@Param('userId') userId: string) { /* ... */ }
 ```
 
-`isTenant` is the multi-tenant counterpart: it matches a request value against the caller's **tenant** to block cross-tenant access (a user of tenant A reaching `/tenants/B/...`):
+Mallory's forged POST now returns `403` (`'alice'` ≠ `'mallory'`), and she can't read `/users/alice/profile` by swapping the id.
+
+`isTenant` is the same check one level up — for multi-tenant APIs. It matches the **requested** tenant (URL/query/body) against the caller's **claimed** tenant (from the token/headers, never the attacker-controlled payload), blocking cross-tenant access:
 
 ```ts
-@Get('tenants/:tenantId/invoices')
+@Post('tenants/:tenantId/invoices')
 @GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isTenant('Param', 'tenantId'))))
-listInvoices() { /* the tenant in the URL must match the caller's token tenant */ }
+createInvoice() { /* a request for /tenants/globex/... from an acme token is rejected */ }
 ```
 
 > Authorization reads `username`, `roles` and (via `isTenant`) `tenant`. Note `isTenant` only checks that a *requested* tenant matches the *claimed* one — it does not replace data-layer scoping (`WHERE tenant_id = ?`), which you still apply with the injected `@Tenant()` value.
