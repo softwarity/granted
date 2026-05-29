@@ -1,7 +1,7 @@
 {
   "name": "@softwarity/nestjs-granted",
-  "version": "3.0.0",
-  "description": "RBAC security for NestJS endpoints. Decorator-based authorization with composable boolean specifications and pluggable user-info providers (HTTP headers or JWT).",
+  "version": "4.0.0",
+  "description": "RBAC security for NestJS endpoints. Decorator-based authorization with composable boolean specifications and pluggable principal providers (HTTP headers or JWT).",
   "keywords": [
     "nestjs",
     "rbac",
