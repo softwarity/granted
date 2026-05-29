@@ -15,6 +15,10 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/securing-endpoints.component').then((m) => m.SecuringEndpointsComponent),
   },
   {
+    path: 'ownership',
+    loadComponent: () => import('./pages/ownership.component').then((m) => m.OwnershipComponent),
+  },
+  {
     path: 'boolean-specs',
     loadComponent: () => import('./pages/boolean-specs.component').then((m) => m.BooleanSpecsComponent),
   },

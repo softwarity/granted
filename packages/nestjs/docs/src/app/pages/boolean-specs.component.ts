@@ -100,7 +100,7 @@ and(isAuthenticated(), not(hasRole('SUSPENDED')));</app-code>
       <strong>straight from the request</strong> and compares it to the caller's <code>username</code> —
       closing the door on <strong>IDOR</strong>, where an authenticated user swaps an id in the URL or
       body to act on someone else's data (see the
-      <a routerLink="/securing-endpoints">forged-POST scenario</a>).
+      <a routerLink="/ownership">forged-POST scenario</a>).
     </p>
     <app-code lang="ts">isUser('Param', 'userId')        // request.params.userId === username
 isUser('Query', 'owner')         // request.query.owner   === username

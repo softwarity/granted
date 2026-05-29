@@ -20,6 +20,7 @@ export class AppComponent {
     { path: '/', label: 'Getting started', icon: 'rocket_launch' },
     { path: '/configuration', label: 'Configuration', icon: 'settings' },
     { path: '/securing-endpoints', label: 'Securing endpoints', icon: 'lock' },
+    { path: '/ownership', label: 'Resource ownership', icon: 'verified_user' },
     { path: '/boolean-specs', label: 'Boolean specifications', icon: 'rule' },
     { path: '/parameter-decorators', label: 'Parameter decorators', icon: 'tune' },
     { path: '/info-providers', label: 'Info providers', icon: 'badge' },
