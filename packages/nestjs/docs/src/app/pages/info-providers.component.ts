@@ -35,11 +35,11 @@ import { CodeComponent } from '../code/code.component';
     <h3>GrantedPrincipalProvider — from headers (default)</h3>
     <p>Used automatically when you don't pass an <code>principalProvider</code>.</p>
     <table>
-      <thead><tr><th>Field</th><th>Source header</th><th>Default</th></tr></thead>
+      <thead><tr><th>Field</th><th>Default header</th><th>Parsing</th><th>Fallback</th></tr></thead>
       <tbody>
-        <tr><td><code>username</code></td><td><code>username</code></td><td><code>'anonymous'</code></td></tr>
-        <tr><td><code>roles</code></td><td><code>roles</code> (JSON array)</td><td><code>[]</code></td></tr>
-        <tr><td><code>tenant</code></td><td><code>tenant</code></td><td><code>undefined</code></td></tr>
+        <tr><td><code>username</code></td><td><code>username</code></td><td>raw string</td><td><code>'anonymous'</code></td></tr>
+        <tr><td><code>roles</code></td><td><code>roles</code></td><td>JSON array, or CSV</td><td><code>[]</code></td></tr>
+        <tr><td><code>tenant</code></td><td><code>tenant</code></td><td>raw string</td><td><code>undefined</code></td></tr>
       </tbody>
     </table>
     <app-code lang="ts">GrantedModule.forRoot(&#123; apply: true &#125;); // GrantedPrincipalProvider is implied</app-code>
@@ -48,18 +48,24 @@ import { CodeComponent } from '../code/code.component';
       <code>username: alice</code>, <code>roles: ["ADMIN","USER"]</code>.
     </p>
 
-    <h4>roles header format: JSON or CSV</h4>
+    <h4>Configurable header names &amp; roles format</h4>
     <p>
-      By default the <code>roles</code> header is a JSON array. If your gateway sends a comma-separated
-      string instead (<code>roles: ADMIN, USER</code>), construct the provider with
-      <code>rolesFormat: 'csv'</code> — values are split on commas and trimmed:
+      Both the <strong>header names</strong> and the <strong>roles encoding</strong> are configurable.
+      Header names default to <code>username</code> / <code>roles</code> / <code>tenant</code>; the roles
+      header is a JSON array by default, or a trimmed comma-separated list with
+      <code>rolesFormat: 'csv'</code>:
     </p>
     <app-code lang="ts">import &#123; GrantedModule, GrantedPrincipalProvider &#125; from '&#64;softwarity/nestjs-granted';
 
 GrantedModule.forRoot(&#123;
-  principalProvider: new GrantedPrincipalProvider(&#123; rolesFormat: 'csv' &#125;), // default: 'json'
+  principalProvider: new GrantedPrincipalProvider(&#123;
+    usernameHeader: 'x-user',   // default 'username'
+    rolesHeader: 'x-roles',     // default 'roles'
+    tenantHeader: 'x-tenant',   // default 'tenant'
+    rolesFormat: 'csv',         // default 'json' — 'ROLE1, ROLE2' instead of ["ROLE1","ROLE2"]
+  &#125;),
 &#125;);</app-code>
-    <p class="callout">This option is specific to the header provider — JWT roles come from a claim, which is already an array (see <code>rolesClaim</code> below).</p>
+    <p class="callout">These options are specific to the header provider — JWT identity comes from configurable claims (<code>rolesClaim</code>, etc.), and roles there are already an array.</p>
 
     <h3>GrantedJwtPrincipalProvider — from a verified JWT</h3>
     <p>

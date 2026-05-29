@@ -45,6 +45,29 @@ reports() &#123; /* ... */ &#125;</app-code>
 // same as
 &#64;GrantedTo(and(isAuthenticated(), hasRole('ADMIN')))</app-code>
 
+    <h3>Class level — a baseline for every route</h3>
+    <p>
+      <code>&#64;GrantedTo</code> also decorates a <strong>controller class</strong>. The class specs
+      apply to every route in it, and are <strong>merged</strong> with each method's specs — the guard
+      requires <strong>all</strong> of them (class + method) to pass. The class sets a baseline; a method
+      can only tighten it.
+    </p>
+    <app-code lang="ts">&#64;Controller('admin')
+&#64;GrantedTo(isAuthenticated())          // baseline: every route requires a logged-in caller
+export class AdminController &#123;
+  &#64;Get('stats')
+  stats() &#123; /* effective: isAuthenticated() */ &#125;
+
+  &#64;Get('config')
+  &#64;GrantedTo(hasRole('ADMIN'))         // effective: isAuthenticated() AND hasRole('ADMIN')
+  config() &#123; /* ... */ &#125;
+&#125;</app-code>
+    <div class="callout warn">
+      Specs are <strong>AND-merged</strong>, so a method cannot <em>loosen</em> a class-level rule (there's
+      no opt-out). If some routes in a controller must stay open, don't annotate the class — secure the
+      individual routes instead.
+    </div>
+
     <h3>OR between roles</h3>
     <app-code lang="ts">&#64;Get('billing')
 &#64;GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), hasRole('ACCOUNTANT'))))

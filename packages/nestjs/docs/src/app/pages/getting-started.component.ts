@@ -72,7 +72,7 @@ import { CodeComponent } from '../code/code.component';
       <a routerLink="/securing-endpoints" class="feature-card">
         <span class="feature-icon">🛡️</span>
         <span class="feature-title">Declarative guard</span>
-        <span class="feature-desc">One <code>&#64;GrantedTo(...)</code> per route, enforced by a global guard.</span>
+        <span class="feature-desc">One <code>&#64;GrantedTo(...)</code> per route or controller, enforced by a global guard.</span>
       </a>
       <a routerLink="/boolean-specs" class="feature-card">
         <span class="feature-icon">🧩</span>

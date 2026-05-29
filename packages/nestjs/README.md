@@ -95,6 +95,23 @@ adminOnly() { /* ... */ }
 
 A route with **no** `@GrantedTo` is open. A route with `@GrantedTo(...)` passes only if **every** spec returns `true`.
 
+`@GrantedTo` also applies at the **controller class** level — a baseline for every route inside it. Class and method specs are **merged**: all of them must pass (class = baseline, method tightens).
+
+```ts
+@Controller('admin')
+@GrantedTo(isAuthenticated())          // baseline: every route requires a logged-in caller
+export class AdminController {
+  @Get('stats')
+  stats() { /* needs: isAuthenticated() */ }
+
+  @Get('config')
+  @GrantedTo(hasRole('ADMIN'))         // tightened: isAuthenticated() AND hasRole('ADMIN')
+  config() { /* ... */ }
+}
+```
+
+> There is no "opt-out": a method can't loosen a class-level spec (specs are AND-merged). Leave a controller un-annotated and secure routes individually if some must stay open.
+
 ---
 
 ## Boolean specifications
@@ -188,23 +205,28 @@ The identity is resolved by an `IGrantedPrincipalProvider`. Two are shipped.
 
 ### `GrantedPrincipalProvider` (default) — from headers
 
-| info | source header | default |
-|---|---|---|
-| `username` | `username` | `anonymous` |
-| `roles` | `roles` (JSON array, or CSV — see below) | `[]` |
-| `tenant` | `tenant` | `undefined` |
+| info | default header | parsing | fallback |
+|---|---|---|---|
+| `username` | `username` | raw string | `anonymous` |
+| `roles` | `roles` | JSON array, or CSV | `[]` |
+| `tenant` | `tenant` | raw string | `undefined` |
 
-The `roles` header is a JSON array by default. If your gateway sends a comma-separated string (`roles: ADMIN, USER`), set `rolesFormat: 'csv'`:
+Both the **header names** and the **roles encoding** are configurable:
 
 ```ts
 import { GrantedModule, GrantedPrincipalProvider } from '@softwarity/nestjs-granted';
 
 GrantedModule.forRoot({
-  principalProvider: new GrantedPrincipalProvider({ rolesFormat: 'csv' }), // default: 'json'
+  principalProvider: new GrantedPrincipalProvider({
+    usernameHeader: 'x-user',   // default 'username'
+    rolesHeader: 'x-roles',     // default 'roles'
+    tenantHeader: 'x-tenant',   // default 'tenant'
+    rolesFormat: 'csv',         // default 'json' — 'ROLE1, ROLE2' instead of ["ROLE1","ROLE2"]
+  }),
 });
 ```
 
-> This option is specific to the header provider — JWT roles come from a claim, already an array.
+> These options are specific to the header provider — JWT identity comes from configurable claims (`rolesClaim`, etc.), and roles there are already an array.
 
 ### `GrantedJwtPrincipalProvider` — from a verified JWT
 

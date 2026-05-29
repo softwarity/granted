@@ -17,8 +17,10 @@ export class AppGuard implements CanActivate {
   }
 
   canActivate(context: ExecutionContext): boolean {
-    const booleanSpecs: BooleanSpec[] = this.reflector.get<BooleanSpec[]>('booleanSpecs', context.getHandler());
-    if (!booleanSpecs || !this.options.apply) {
+    // Merge specs declared on the controller class with those on the handler:
+    // every spec from both levels must pass (class = baseline, method tightens).
+    const booleanSpecs: BooleanSpec[] = this.reflector.getAllAndMerge<BooleanSpec[]>('booleanSpecs', [context.getHandler(), context.getClass()]);
+    if (!this.options.apply || !booleanSpecs || booleanSpecs.length === 0) {
       return true;
     }
     const request: Request = context.switchToHttp().getRequest();

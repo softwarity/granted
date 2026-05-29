@@ -32,6 +32,39 @@ describe('GrantedPrincipalProvider — roles format', () => {
   });
 });
 
+describe('GrantedPrincipalProvider — custom header names', () => {
+  const provider = new GrantedPrincipalProvider({
+    usernameHeader: 'x-user',
+    rolesHeader: 'x-roles',
+    tenantHeader: 'x-tenant',
+  });
+
+  it('reads from the configured headers (Request)', () => {
+    const req = reqWithHeaders({ 'x-user': 'alice', 'x-roles': '["ADMIN"]', 'x-tenant': 'acme' });
+    expect(provider.getUsernameFromRequest(req)).toBe('alice');
+    expect(provider.getRolesFromRequest(req)).toEqual(['ADMIN']);
+    expect(provider.getTenantFromRequest(req)).toBe('acme');
+  });
+
+  it('reads from the configured headers (IncomingMessage, lowercased keys)', () => {
+    const msg = { headers: { 'x-user': 'bob', 'x-roles': '["USER"]', 'x-tenant': 'globex' } } as any;
+    expect(provider.getUsernameFromIncomingMessage(msg)).toBe('bob');
+    expect(provider.getRolesFromIncomingMessage(msg)).toEqual(['USER']);
+    expect(provider.getTenantFromIncomingMessage(msg)).toBe('globex');
+  });
+
+  it('ignores the default header names when custom ones are set', () => {
+    const req = reqWithHeaders({ username: 'alice', roles: '["ADMIN"]' });
+    expect(provider.getUsernameFromRequest(req)).toBe('anonymous');
+    expect(provider.getRolesFromRequest(req)).toEqual([]);
+  });
+
+  it('combines custom header names with csv format', () => {
+    const csv = new GrantedPrincipalProvider({ rolesHeader: 'x-roles', rolesFormat: 'csv' });
+    expect(csv.getRolesFromRequest(reqWithHeaders({ 'x-roles': 'A, B' }))).toEqual(['A', 'B']);
+  });
+});
+
 describe('expandRoles — hierarchy', () => {
   const hierarchy = { ADMIN: ['MANAGER'], MANAGER: ['USER'] };
 
