@@ -1,16 +1,16 @@
 import { CanActivate, ExecutionContext, Inject, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
-import { GrantedModuleOptions } from 'src/models/granted-module-options';
+import { GrantedModuleOptions } from '../models/granted-module-options';
 import { BooleanSpec } from './boolean-spec';
-import { GrantedInfoProvider } from 'src/services/granted-info.provider';
+import { GrantedInfoProvider } from '../services/granted-info.provider';
 
 @Injectable()
 export class AppGuard implements CanActivate {
-  private grantedInfoService: GrantedInfoProvider
+  private grantedInfoService: GrantedInfoProvider;
   constructor(
     @Inject('GRANTED_MODULE_OPTIONS') private readonly options: GrantedModuleOptions,
-    private reflector: Reflector
+    private reflector: Reflector,
   ) {
     this.grantedInfoService = options.infoProvider;
   }

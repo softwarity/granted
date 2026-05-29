@@ -1,72 +1,82 @@
 {
-  "name": "@hhnest/granted",
-  "version": "1.0.5",
-  "author": "Achache francois",
-  "license": "MIT",
-  "description": "Granted Module for NestJS",
+  "name": "@softwarity/nestjs-granted",
+  "version": "2.0.0",
+  "description": "RBAC security for NestJS endpoints. Decorator-based authorization with composable boolean specifications and pluggable user-info providers (HTTP headers or JWT).",
+  "keywords": [
+    "nestjs",
+    "rbac",
+    "authorization",
+    "security",
+    "guard",
+    "roles",
+    "jwt",
+    "decorator",
+    "access-control",
+    "permissions"
+  ],
+  "homepage": "https://github.com/softwarity/nestjs-granted#readme",
+  "bugs": {
+    "url": "https://github.com/softwarity/nestjs-granted/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hhnest/granted.git"
+    "url": "git+https://github.com/softwarity/nestjs-granted.git"
   },
-  "publishConfig": {
-    "access": "public"
-  },
+  "license": "MIT",
+  "author": "François ACHACHE <francois.achache@gmail.com>",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "nest build ; cp package.json dist/package.json ; cp README.md dist/README.md",
-    "cp:panoptes-srv": "cp -r dist/* ../../hhdevelopment/panoptes-srv/node_modules/@hhnest/granted/",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"libs/**/*.ts\"",
-    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix"
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "lint:fix": "eslint \"src/**/*.ts\" \"test/**/*.ts\" --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "peerDependencies": {
-    "@nestjs/common": "^10.0.0",
-    "@nestjs/core": "^10.0.0",
-    "@nestjs/platform-express": "^10.0.0"
-  },
-  "devDependencies": {
-    "@nestjs/cli": "^10.0.0",
-    "@nestjs/schematics": "^10.0.0",
-    "@nestjs/testing": "^10.0.0",
-    "@types/express": "^4.17.17",
-    "@types/jest": "^29.5.2",
-    "@types/jsonwebtoken": "^9.0.5",
-    "@types/node": "^20.3.1",
-    "@types/supertest": "^2.0.12",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.42.0",
-    "eslint-config-prettier": "^9.0.0",
-    "eslint-plugin-prettier": "^5.0.0",
-    "jest": "^29.5.0",
-    "prettier": "^3.0.0",
-    "source-map-support": "^0.5.21",
-    "supertest": "^6.3.3",
-    "ts-jest": "^29.1.0",
-    "ts-loader": "^9.4.3",
-    "ts-node": "^10.9.1",
-    "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.1.3"
-  },
-  "jest": {
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
-    ],
-    "rootDir": ".",
-    "testRegex": ".*\\.spec\\.ts$",
-    "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
-    },
-    "collectCoverageFrom": [
-      "**/*.(t|j)s"
-    ],
-    "coverageDirectory": "./coverage",
-    "testEnvironment": "node",
-    "roots": [
-      "<rootDir>/src/"
-    ]
+    "@nestjs/common": ">=10.0.0 <12.0.0",
+    "@nestjs/core": ">=10.0.0 <12.0.0",
+    "@nestjs/platform-express": ">=10.0.0 <12.0.0",
+    "reflect-metadata": "^0.1.13 || ^0.2.0",
+    "rxjs": "^7.5.0"
   },
   "dependencies": {
     "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/core": "^11.0.1",
+    "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/testing": "^11.0.1",
+    "@types/express": "^5.0.0",
+    "@types/jest": "^29.5.14",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.10.5",
+    "@types/supertest": "^6.0.2",
+    "@typescript-eslint/eslint-plugin": "^8.20.0",
+    "@typescript-eslint/parser": "^8.20.0",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "jest": "^29.7.0",
+    "prettier": "^3.4.2",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.7.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -1,11 +1,9 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import { IncomingMessage } from 'http';
-import { IGrantedInfoProvider } from 'src/services';
+import { IGrantedInfoProvider } from '../services';
 
-export const Roles = createParamDecorator(
-  (config: void, ctx: ExecutionContext) => {
-    const incomingMessage: IncomingMessage = ctx.switchToHttp().getRequest<IncomingMessage>();
-    const grantedInfoService: IGrantedInfoProvider = incomingMessage['grantedInfoService'];
-    return grantedInfoService.getRolesFromIncomingMessage(incomingMessage);
-  },
-);
+export const Roles = createParamDecorator((config: void, ctx: ExecutionContext) => {
+  const incomingMessage: IncomingMessage = ctx.switchToHttp().getRequest<IncomingMessage>();
+  const grantedInfoService: IGrantedInfoProvider = incomingMessage['grantedInfoService'];
+  return grantedInfoService.getRolesFromIncomingMessage(incomingMessage);
+});
