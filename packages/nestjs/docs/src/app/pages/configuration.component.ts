@@ -40,8 +40,53 @@ import { CodeComponent } from '../code/code.component';
             <a routerLink="/info-providers">Info providers</a>.
           </td>
         </tr>
+        <tr>
+          <td><code>knownRoles</code></td>
+          <td><code>string[]</code></td>
+          <td><em>(all)</em></td>
+          <td>
+            Roles this module knows about. When set, any resolved role outside the set is dropped — so a
+            shared token carrying roles for other modules doesn't pollute this module's view. Leave
+            undefined to keep every role.
+          </td>
+        </tr>
+        <tr>
+          <td><code>roleHierarchy</code></td>
+          <td><code>Record&lt;string, string[]&gt;</code></td>
+          <td><em>(none)</em></td>
+          <td>
+            A role mapped to the roles it implies, expanded transitively: holding a role grants its
+            implied roles for both the guard and <code>&#64;Roles()</code>.
+          </td>
+        </tr>
       </tbody>
     </table>
+
+    <h3>Known roles — keep your view clean</h3>
+    <p>
+      A gateway often issues one token whose <code>roles</code> span several services. Declare the roles
+      <em>this</em> module cares about and the rest are silently dropped from both authorization and the
+      injected <code>&#64;Roles()</code>:
+    </p>
+    <app-code lang="ts">GrantedModule.forRoot(&#123;
+  knownRoles: ['ORDER_READ', 'ORDER_WRITE', 'ORDER_ADMIN'],
+&#125;);
+// token roles ['ORDER_WRITE', 'BILLING_ADMIN', 'CRM_USER'] → seen as ['ORDER_WRITE']</app-code>
+
+    <h3>Role hierarchy — implied roles</h3>
+    <p>
+      Map a role to the roles it implies. Expansion is transitive and cycle-safe, applied
+      <strong>before</strong> <code>knownRoles</code> filtering. With the hierarchy below, an
+      <code>ORDER_ADMIN</code> automatically satisfies <code>hasRole('ORDER_WRITE')</code> and
+      <code>hasRole('ORDER_READ')</code>:
+    </p>
+    <app-code lang="ts">GrantedModule.forRoot(&#123;
+  roleHierarchy: &#123;
+    ORDER_ADMIN: ['ORDER_WRITE'],
+    ORDER_WRITE: ['ORDER_READ'],
+  &#125;,
+&#125;);
+// caller holds ['ORDER_ADMIN'] → guard &amp; @Roles() see ['ORDER_ADMIN', 'ORDER_WRITE', 'ORDER_READ']</app-code>
 
     <h3>Minimal</h3>
     <app-code lang="ts">GrantedModule.forRoot()</app-code>

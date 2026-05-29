@@ -28,7 +28,7 @@ import { CodeComponent } from '../code/code.component';
         <tr>
           <td><code>&#64;Roles()</code></td>
           <td><code>string[]</code></td>
-          <td>header <code>roles</code>, JSON-parsed (fallback <code>[]</code>)</td>
+          <td>header <code>roles</code> (fallback <code>[]</code>)</td>
         </tr>
         <tr>
           <td><code>&#64;Tenant()</code></td>
@@ -37,6 +37,12 @@ import { CodeComponent } from '../code/code.component';
         </tr>
       </tbody>
     </table>
+
+    <div class="callout">
+      <code>&#64;Roles()</code> returns the <strong>processed</strong> roles — after
+      <a routerLink="/configuration">role-hierarchy expansion and <code>knownRoles</code> filtering</a> —
+      i.e. exactly the set the guard authorizes against, not the raw header/claim value.
+    </div>
 
     <h3>Usage</h3>
     <app-code lang="ts">import &#123; Controller, Get &#125; from '&#64;nestjs/common';

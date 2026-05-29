@@ -38,7 +38,10 @@ import { CodeComponent } from '../code/code.component';
         </tr>
         <tr>
           <td><code>hasRole(role: string)</code></td>
-          <td><code>roles</code> includes <code>role</code>.</td>
+          <td>
+            <code>roles</code> includes <code>role</code> — after
+            <a routerLink="/configuration">hierarchy expansion</a>, so an implied role matches too.
+          </td>
         </tr>
         <tr>
           <td><code>isUser(type, field)</code></td>

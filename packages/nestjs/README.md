@@ -153,6 +153,33 @@ createInvoice() { /* a request for /tenants/globex/... from an acme token is rej
 
 ---
 
+## Roles: known set & hierarchy
+
+Two module-level options shape the roles before the guard and `@Roles()` ever see them. They work with any provider (header or JWT).
+
+**`knownRoles`** — a gateway often issues one token whose roles span several services. Declare the roles *this* module cares about and the rest are dropped, so your view isn't polluted:
+
+```ts
+GrantedModule.forRoot({
+  knownRoles: ['ORDER_READ', 'ORDER_WRITE', 'ORDER_ADMIN'],
+});
+// token roles ['ORDER_WRITE', 'BILLING_ADMIN', 'CRM_USER'] → seen as ['ORDER_WRITE']
+```
+
+**`roleHierarchy`** — map a role to the roles it implies. Expansion is transitive and cycle-safe, applied *before* `knownRoles` filtering, for both the guard and `@Roles()`:
+
+```ts
+GrantedModule.forRoot({
+  roleHierarchy: {
+    ORDER_ADMIN: ['ORDER_WRITE'],
+    ORDER_WRITE: ['ORDER_READ'],
+  },
+});
+// caller holds ['ORDER_ADMIN'] → hasRole('ORDER_READ') passes; @Roles() yields all three
+```
+
+---
+
 ## User-info providers
 
 The identity is resolved by an `IGrantedInfoProvider`. Two are shipped.
@@ -162,8 +189,20 @@ The identity is resolved by an `IGrantedInfoProvider`. Two are shipped.
 | info | source header | default |
 |---|---|---|
 | `username` | `username` | `anonymous` |
-| `roles` | `roles` (JSON array) | `[]` |
+| `roles` | `roles` (JSON array, or CSV — see below) | `[]` |
 | `tenant` | `tenant` | `undefined` |
+
+The `roles` header is a JSON array by default. If your gateway sends a comma-separated string (`roles: ADMIN, USER`), set `rolesFormat: 'csv'`:
+
+```ts
+import { GrantedModule, GrantedInfoProvider } from '@softwarity/nestjs-granted';
+
+GrantedModule.forRoot({
+  infoProvider: new GrantedInfoProvider({ rolesFormat: 'csv' }), // default: 'json'
+});
+```
+
+> This option is specific to the header provider — JWT roles come from a claim, already an array.
 
 ### `GrantedInfoJwtProvider` — from a verified JWT
 

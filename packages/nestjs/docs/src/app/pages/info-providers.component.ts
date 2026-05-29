@@ -48,6 +48,19 @@ import { CodeComponent } from '../code/code.component';
       <code>username: alice</code>, <code>roles: ["ADMIN","USER"]</code>.
     </p>
 
+    <h4>roles header format: JSON or CSV</h4>
+    <p>
+      By default the <code>roles</code> header is a JSON array. If your gateway sends a comma-separated
+      string instead (<code>roles: ADMIN, USER</code>), construct the provider with
+      <code>rolesFormat: 'csv'</code> — values are split on commas and trimmed:
+    </p>
+    <app-code lang="ts">import &#123; GrantedModule, GrantedInfoProvider &#125; from '&#64;softwarity/nestjs-granted';
+
+GrantedModule.forRoot(&#123;
+  infoProvider: new GrantedInfoProvider(&#123; rolesFormat: 'csv' &#125;), // default: 'json'
+&#125;);</app-code>
+    <p class="callout">This option is specific to the header provider — JWT roles come from a claim, which is already an array (see <code>rolesClaim</code> below).</p>
+
     <h3>GrantedInfoJwtProvider — from a verified JWT</h3>
     <p>
       Reads <code>Authorization: Bearer &lt;token&gt;</code>, verifies the signature with your public key,
