@@ -5,6 +5,50 @@ import { CodeComponent } from '../code/code.component';
 @Component({
   selector: 'app-getting-started',
   imports: [CodeComponent, RouterLink],
+  styles: [
+    `
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 12px;
+        margin: 0 0 28px 0;
+      }
+      .feature-card {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 14px 16px;
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        text-decoration: none;
+        transition: all 0.15s;
+      }
+      .feature-card:hover {
+        border-color: var(--accent-purple);
+        background-color: rgba(163, 113, 247, 0.1);
+        text-decoration: none;
+        transform: translateY(-1px);
+      }
+      .feature-icon {
+        font-size: 1.3rem;
+        line-height: 1;
+      }
+      .feature-title {
+        font-weight: 600;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+      }
+      .feature-desc {
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        line-height: 1.45;
+      }
+      .feature-desc code {
+        font-size: 0.85em;
+      }
+    `,
+  ],
   template: `
     <h2>Getting started</h2>
 
@@ -22,6 +66,50 @@ import { CodeComponent } from '../code/code.component';
       or as a <code>Bearer</code> JWT. This library does <strong>not</strong> do login, sessions, or
       token issuance. It does authorization and identity injection, nothing more.
     </div>
+
+    <h3>Features</h3>
+    <section class="features">
+      <a routerLink="/securing-endpoints" class="feature-card">
+        <span class="feature-icon">🛡️</span>
+        <span class="feature-title">Declarative guard</span>
+        <span class="feature-desc">One <code>&#64;GrantedTo(...)</code> per route, enforced by a global guard.</span>
+      </a>
+      <a routerLink="/boolean-specs" class="feature-card">
+        <span class="feature-icon">🧩</span>
+        <span class="feature-title">Composable specs</span>
+        <span class="feature-desc"><code>and</code>, <code>or</code>, <code>not</code>, <code>hasRole</code>, <code>isAuthenticated</code>, <code>isUser</code>, <code>isTenant</code>.</span>
+      </a>
+      <a routerLink="/ownership" class="feature-card">
+        <span class="feature-icon">🔐</span>
+        <span class="feature-title">Ownership / anti-IDOR</span>
+        <span class="feature-desc"><code>isUser</code> &amp; <code>isTenant</code> check the targeted record is the caller's.</span>
+      </a>
+      <a routerLink="/parameter-decorators" class="feature-card">
+        <span class="feature-icon">💉</span>
+        <span class="feature-title">Parameter decorators</span>
+        <span class="feature-desc">Inject <code>&#64;Username()</code>, <code>&#64;Roles()</code>, <code>&#64;Tenant()</code>.</span>
+      </a>
+      <a routerLink="/configuration" class="feature-card">
+        <span class="feature-icon">🪜</span>
+        <span class="feature-title">Role hierarchy</span>
+        <span class="feature-desc">One role implies others (<code>ADMIN ⇒ MANAGER ⇒ USER</code>), expanded transitively.</span>
+      </a>
+      <a routerLink="/configuration" class="feature-card">
+        <span class="feature-icon">🧹</span>
+        <span class="feature-title">Known-roles filter</span>
+        <span class="feature-desc">Keep only the roles your module owns; ignore a shared token's noise.</span>
+      </a>
+      <a routerLink="/info-providers" class="feature-card">
+        <span class="feature-icon">🔑</span>
+        <span class="feature-title">JWT + IdP presets</span>
+        <span class="feature-desc">RFC 9068, Azure AD, Keycloak, Okta — or a custom claim mapping.</span>
+      </a>
+      <a routerLink="/info-providers" class="feature-card">
+        <span class="feature-icon">📥</span>
+        <span class="feature-title">Header or JWT</span>
+        <span class="feature-desc">Pluggable provider; roles header as JSON or CSV.</span>
+      </a>
+    </section>
 
     <h3>Compatibility</h3>
     <ul>
