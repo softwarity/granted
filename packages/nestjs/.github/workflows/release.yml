@@ -16,9 +16,12 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     steps:
+      # Checkout with the default GITHUB_TOKEN (always able to read the repo).
+      # persist-credentials: false so the tag push below uses the PAT instead —
+      # a PAT-pushed tag is what triggers the downstream publish (tag.yml).
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.PAT_TOKEN }} # Required: the default workflow user does NOT trigger downstream actions
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -26,8 +29,11 @@ jobs:
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm whoami --registry https://registry.npmjs.org/
-      - run: git config user.name "$GITHUB_ACTOR"
-      - run: git config user.email ""
-      - run: npm version ${{ inputs.bump }}
-      - run: git push --all
-      - run: git push --tags
+      - name: Configure git identity
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+      - name: Bump version and create tag
+        run: npm version ${{ inputs.bump }}
+      - name: Push commit and tag (PAT triggers the publish workflow)
+        run: git push "https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main --follow-tags
