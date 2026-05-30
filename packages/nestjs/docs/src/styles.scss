@@ -54,6 +54,26 @@ a {
   }
 }
 
+// Icons: migrated from Material Icons to Material Symbols (Outlined).
+// Angular Material renders <mat-icon> with the `material-icons` class; we point
+// it (and any standalone symbol span) at the Material Symbols font. The icon
+// ligature names are identical between the two families.
+mat-icon,
+.material-icons,
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined' !important;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
 // Inline `code` (not inside a <pre>) — keep the original GitHub-dark style
 :not(pre) > code:not([class*='language-']) {
   font-family: 'Courier New', Consolas, monospace;
