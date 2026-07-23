@@ -1,7 +1,7 @@
 # @softwarity/nestjs-granted
 
 [![npm version](https://img.shields.io/npm/v/@softwarity/nestjs-granted.svg)](https://www.npmjs.com/package/@softwarity/nestjs-granted)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-yellow.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Node](https://img.shields.io/node/v/@softwarity/nestjs-granted.svg)](https://nodejs.org)
 [![Unit tests](https://github.com/softwarity/nestjs-granted/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/softwarity/nestjs-granted/actions/workflows/unit-tests.yml)
 
@@ -300,4 +300,4 @@ GrantedModule.forRoot({ apply: true, principalProvider: new MyGrantedPrincipalPr
 
 ## License
 
-MIT © [Softwarity](https://www.softwarity.io/)
+Apache-2.0 © [Softwarity](https://www.softwarity.io/)
