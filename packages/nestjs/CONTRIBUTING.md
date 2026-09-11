@@ -12,6 +12,8 @@ npm test
 npm run build
 ```
 
+The test suites need **Node.js ≥ 24.9**: NestJS 12 ships as ESM only, and Jest loads it through its `require(esm)` support (the `test` scripts pass `--experimental-vm-modules` for you).
+
 ## Documentation site
 
 The doc site is an Angular app under `docs/`. To run it locally:

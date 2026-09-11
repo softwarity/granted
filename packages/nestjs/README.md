@@ -31,7 +31,7 @@ findOrders(@Username() me: string, @Roles() roles: string[]) { /* ... */ }
 - 🔌 **Pluggable principal provider** — HTTP headers (JSON or CSV roles) or a verified JWT
 - 🔑 **JWT verification** with **IdP presets** — RFC 9068/SCIM, Azure AD/Entra, Keycloak, Okta — or a fully custom claim mapping
 - 🏢 **Multi-tenant aware** — `@Tenant()` injection plus `isTenant` to block cross-tenant access
-- 🪶 **Tiny & dependency-light** — just `jsonwebtoken`; works on NestJS 10 & 11
+- 🪶 **Tiny & dependency-light** — just `jsonwebtoken`; works on NestJS 10, 11 & 12
 
 ## Installation
 
@@ -45,11 +45,13 @@ npm install @nestjs/common @nestjs/core @nestjs/platform-express rxjs reflect-me
 
 | name | version |
 |---|---|
-| @nestjs/common | >=10 <12 |
-| @nestjs/core | >=10 <12 |
-| @nestjs/platform-express | >=10 <12 |
+| @nestjs/common | >=10 <13 |
+| @nestjs/core | >=10 <13 |
+| @nestjs/platform-express | >=10 <13 |
 | rxjs | ^7.5 |
 | reflect-metadata | ^0.1.13 \|\| ^0.2 |
+
+> NestJS 12 ships as ESM only. This library is CommonJS and loads it through Node's `require(esm)`, so with NestJS 12 you need Node.js ≥ 20.19 or ≥ 22.12 — the same requirement NestJS 12 itself has for CommonJS apps. ESM apps work too.
 
 ---
 
