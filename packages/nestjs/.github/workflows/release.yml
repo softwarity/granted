@@ -1,5 +1,5 @@
 name: Create Tag/Release
-run-name: ${{ github.actor }} run build on ${{ github.repository }}
+run-name: ${{ github.actor }} release ${{ inputs.bump }} on ${{ github.repository }}
 on:
   workflow_dispatch:
     inputs:
@@ -14,26 +14,35 @@ on:
           - major
 jobs:
   create-release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      # Checkout with the default GITHUB_TOKEN (always able to read the repo).
-      # persist-credentials: false so the tag push below uses the PAT instead —
-      # a PAT-pushed tag is what triggers the downstream publish (tag.yml).
       - uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          fetch-depth: 0
+          # PAT (not GITHUB_TOKEN) so the pushed tag triggers tag.yml (npm publish).
+          token: ${{ secrets.PAT_TOKEN }}
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
+      # Everything below runs BEFORE release-flow: the tag is what triggers the
+      # npm publish, so nothing gets tagged that tag.yml would then refuse.
       - name: Verify NPM token is valid
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm whoami --registry https://registry.npmjs.org/
-      - name: Configure git identity
+      - name: Lint, test and build before tagging
         run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
-      - name: Bump version and create tag
-        run: npm version ${{ inputs.bump }}
-      - name: Push commit and tag (PAT triggers the publish workflow)
-        run: git push "https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:main --follow-tags
+          npm ci
+          npm run lint
+          npm test
+          npm run build
+      # Bumps package.json, renames "## NEXT RELEASE" in RELEASE_NOTES.md to the
+      # new version, tags v<version>, publishes the GitHub Release from those
+      # notes and reopens an empty "## NEXT RELEASE".
+      - name: Release
+        uses: softwarity/release-flow@v1
+        with:
+          bump: ${{ inputs.bump }}
