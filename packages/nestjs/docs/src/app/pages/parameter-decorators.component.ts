@@ -95,6 +95,8 @@ listInvoices(&#64;Tenant() tenant: string | undefined) &#123;
       incoming message, and each decorator reads from it via
       <code>getXxxFromIncomingMessage(...)</code>. That's why decorators keep working even when the
       module is in <code>apply: false</code> mode — identity injection and enforcement are independent.
+      Decorators run after the guard, which has already awaited any asynchronous resolution (such as a
+      JWKS fetch), so they stay synchronous.
     </div>
 
     <h3>Changing the source</h3>

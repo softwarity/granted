@@ -30,6 +30,7 @@ findOrders(@Username() me: string, @Roles() roles: string[]) { /* ... */ }
 - 🧹 **Known-roles filtering** — keep only the roles your module owns, ignoring those a shared token carries for other services
 - 🔌 **Pluggable principal provider** — HTTP headers (JSON or CSV roles) or a verified JWT
 - 🔑 **JWT verification** with **IdP presets** — RFC 9068/SCIM, Azure AD/Entra, Keycloak, Okta — or a fully custom claim mapping
+- 🔄 **JWKS key rotation** — verification keys fetched from the IdP's JWKS endpoint, cached, and re-fetched when it rotates them
 - 🏢 **Multi-tenant aware** — `@Tenant()` injection plus `isTenant` to block cross-tenant access
 - 🪶 **Tiny & dependency-light** — just `jsonwebtoken`; works on NestJS 10, 11 & 12
 
@@ -232,7 +233,7 @@ GrantedModule.forRoot({
 
 ### `GrantedJwtPrincipalProvider` — from a verified JWT
 
-Reads the `Authorization: Bearer <token>` header, verifies the token with your public key, and maps the claims to `username` / `roles` / `tenant`. Claim names are configurable (dotted paths supported for nested claims), with presets for common IdPs:
+Reads the `Authorization: Bearer <token>` header, verifies the token with your public key (a PEM, or the IdP's [JWKS endpoint](#keys-from-a-jwks-endpoint--automatic-rotation)), and maps the claims to `username` / `roles` / `tenant`. Claim names are configurable (dotted paths supported for nested claims), with presets for common IdPs:
 
 ```ts
 import { GrantedModule, GrantedJwtPrincipalProvider } from '@softwarity/nestjs-granted';
@@ -263,6 +264,41 @@ export class AppModule {}
 
 Every field is overridable, e.g. `GrantedJwtPrincipalProvider.okta({ pemFile, usernameClaim: 'email' })`.
 
+#### Keys from a JWKS endpoint — automatic rotation
+
+Rather than a static PEM, point the provider at the JWK Set your IdP publishes — its `jwks_uri`, listed in `<issuer>/.well-known/openid-configuration` (often `/.well-known/jwks.json`). When the IdP rotates its signing key, the provider picks up the new one by itself: no restart, no PEM to redeploy.
+
+```ts
+GrantedJwtPrincipalProvider.keycloak({
+  jwksUri: 'https://sso.example.com/realms/acme/protocol/openid-connect/certs',
+});
+```
+
+Keys are fetched on first use and cached. When a token fails verification — typically because it is signed by a key rotated in after the last fetch — the set is re-fetched once and the token verified again. The key is picked by the token's `kid` header (every key is tried when it has none), with the configured `algorithm` (default `RS256`; set it to match your IdP, e.g. `ES256`). Only public signature keys are used: symmetric keys and `"use": "enc"` keys in the set are ignored.
+
+| Option | Default | Purpose |
+|---|---|---|
+| `jwksUri` | — | JWK Set URL. Can't be combined with `base64Key` / `pemFile`. |
+| `jwksCacheMaxAge` | `600000` (10 min) | Keys older than this are re-fetched, so a key the IdP withdrew stops being accepted. |
+| `jwksCooldown` | `30000` (30 s) | Minimum delay between two fetches, so tokens with forged `kid`s can't make the provider hammer the IdP. |
+| `jwksTimeout` | `5000` (5 s) | Timeout of a fetch. |
+
+> If a fetch fails (IdP down, timeout…), the last known keys are kept and a warning is logged; the next attempt waits for the cooldown. Serve the JWKS over HTTPS: whoever controls that response decides which tokens are valid.
+
+#### Issuer and audience — optional
+
+By default the provider checks the signature and the token's validity dates (`exp`, `nbf`), not who issued the token nor whom it is for — the gateway in front of the service usually does that. To check them here too, set `issuer` and/or `audience`; a token that doesn't match is treated as anonymous:
+
+```ts
+GrantedJwtPrincipalProvider.keycloak({
+  jwksUri: 'https://sso.example.com/realms/acme/protocol/openid-connect/certs',
+  issuer: 'https://sso.example.com/realms/acme', // or an array of accepted issuers
+  audience: 'orders-api',                         // a string, a RegExp, or an array of them
+});
+```
+
+Worth it when the service can be reached without going through the gateway, or when the IdP signs other apps' tokens with the same keys — Microsoft Entra ID uses the same signing keys for every tenant. Both options need a key (`base64Key`, `pemFile` or `jwksUri`): an unverified token could claim any issuer.
+
 #### Custom claim mapping
 
 ```ts
@@ -270,6 +306,7 @@ new GrantedJwtPrincipalProvider({
   algorithm: 'RS256',
   pemFile: 'config/jwt_public_key.pem',
   // or base64Key: '-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----',
+  // or jwksUri: 'https://idp.example.com/.well-known/jwks.json',
   usernameClaim: 'sub',              // default 'sub'
   rolesClaim: 'realm_access.roles',  // default 'roles' — dotted paths supported
   tenantClaim: 'tid',                // default 'tenant'
@@ -280,7 +317,7 @@ new GrantedJwtPrincipalProvider({
 
 ### Custom provider
 
-Implement `IGrantedPrincipalProvider` to read the identity from anywhere. Handle both `Request` (route handlers) and `IncomingMessage` (param decorators run earlier in the pipeline):
+Implement `IGrantedPrincipalProvider` to read the identity from anywhere. Handle both `Request` (the guard) and `IncomingMessage` (the parameter decorators):
 
 ```ts
 export class MyGrantedPrincipalProvider implements IGrantedPrincipalProvider {
@@ -297,6 +334,8 @@ export class MyGrantedPrincipalProvider implements IGrantedPrincipalProvider {
 ```ts
 GrantedModule.forRoot({ apply: true, principalProvider: new MyGrantedPrincipalProvider() })
 ```
+
+Resolving the identity needs I/O (a remote key set, a session store…)? Also implement the optional `prepare(request): Promise<void>` hook. The guard awaits it once per request, before any getter is called — on open routes and with `apply: false` too, since the parameter decorators run after the guard. Store what the getters need on the request: they stay synchronous.
 
 ---
 

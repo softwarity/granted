@@ -16,14 +16,17 @@ export class AppGuard implements CanActivate {
     this.grantedPrincipalProvider = options.principalProvider;
   }
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request: Request = context.switchToHttp().getRequest();
+    // Before the early return: the parameter decorators read the identity too,
+    // later in the pipeline, even on open routes or with `apply: false`.
+    await this.grantedPrincipalProvider.prepare?.(request);
     // Merge specs declared on the controller class with those on the handler:
     // every spec from both levels must pass (class = baseline, method tightens).
     const booleanSpecs: BooleanSpec[] = this.reflector.getAllAndMerge<BooleanSpec[]>('booleanSpecs', [context.getHandler(), context.getClass()]);
     if (!this.options.apply || !booleanSpecs || booleanSpecs.length === 0) {
       return true;
     }
-    const request: Request = context.switchToHttp().getRequest();
     const rawRoles: string[] = this.grantedPrincipalProvider.getRolesFromRequest(request);
     const roles: string[] = resolveRoles(rawRoles, this.options.roleHierarchy, this.options.knownRoles);
     const username = this.grantedPrincipalProvider.getUsernameFromRequest(request);

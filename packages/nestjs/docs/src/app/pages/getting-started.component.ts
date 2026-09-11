@@ -103,7 +103,7 @@ import { CodeComponent } from '../code/code.component';
       <a routerLink="/info-providers" class="feature-card">
         <span class="feature-icon material-symbols-outlined">key</span>
         <span class="feature-title">JWT + IdP presets</span>
-        <span class="feature-desc">RFC 9068, Azure AD, Keycloak, Okta — or a custom claim mapping.</span>
+        <span class="feature-desc">PEM or JWKS with key rotation; RFC 9068, Azure AD, Keycloak, Okta presets.</span>
       </a>
       <a routerLink="/info-providers" class="feature-card">
         <span class="feature-icon material-symbols-outlined">swap_horiz</span>

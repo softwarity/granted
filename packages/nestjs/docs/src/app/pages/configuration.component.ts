@@ -122,7 +122,9 @@ export class AppModule &#123;&#125;</app-code>
       <strong>No <code>forRootAsync</code> (yet).</strong> Options are resolved synchronously at module
       construction. If your public key or <code>apply</code> flag comes from async config, read it before
       bootstrap (e.g. load the PEM from disk, or read <code>process.env</code>) and pass the resolved
-      value into <code>forRoot</code>.
+      value into <code>forRoot</code>. A key your IdP rotates needs neither: give
+      <code>GrantedJwtPrincipalProvider</code> a <code>jwksUri</code> and it fetches — and re-fetches — the
+      keys itself (see <a routerLink="/info-providers">Principal providers</a>).
     </div>
 
     <h3>What gets registered</h3>

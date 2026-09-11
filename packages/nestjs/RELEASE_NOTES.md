@@ -2,6 +2,21 @@
 
 ## NEXT RELEASE
 
+### New features
+
+- **JWKS endpoint with automatic key rotation in `GrantedJwtPrincipalProvider`.** New `jwksUri` option — the URL of the JWK Set the IdP publishes (e.g. `https://idp.example.com/.well-known/jwks.json`) — as an alternative to `base64Key` / `pemFile`, available on every preset (`GrantedJwtPrincipalProvider.keycloak({ jwksUri })`). Keys are fetched on first use and cached. When a token fails verification — typically because the IdP rotated its signing key — the set is re-fetched once and the token verified again, so a rotation needs neither a restart nor a new PEM. The key is picked by the token's `kid` (every key is tried when it has none), with the configured `algorithm`; symmetric and `"use": "enc"` keys in the set are ignored. Tuning: `jwksCacheMaxAge` (default 10 min — older keys are re-fetched, so a withdrawn key stops being accepted), `jwksCooldown` (default 30 s — never two fetches closer than that, so forged `kid`s can't hammer the IdP; concurrent requests share one fetch) and `jwksTimeout` (default 5 s). A failed fetch keeps the last known keys and logs a warning. Combining `jwksUri` with `base64Key` / `pemFile` throws at construction. No new dependency: Node's built-in `fetch` and `crypto` do the work.
+- **Optional `issuer` / `audience` checks in `GrantedJwtPrincipalProvider`.** Unset by default, so nothing changes: behind a gateway that already validated the token, the signature and validity dates remain the only checks. When set, a token whose `iss` isn't one of the accepted issuers (`string | string[]`), or whose `aud` doesn't match (`string | RegExp`, or an array of them), is treated as anonymous. Worth it when the service can be reached without the gateway, or with an IdP that signs other apps' tokens with the same keys (Microsoft Entra ID shares its keys across tenants). Both need a key — `base64Key`, `pemFile` or `jwksUri` — and throw at construction without one. With a JWKS, such a rejection doesn't trigger a re-fetch: the key matched.
+- **Optional async `prepare(request)` hook on `IGrantedPrincipalProvider`.** The guard awaits it once per request before reading the identity — on open routes and with `apply: false` too, since the parameter decorators run after the guard. A provider can do I/O there (the JWKS fetch above, a session lookup…) while its getters stay synchronous. Existing providers need no change.
+
+### Changes
+
+- `AppGuard.canActivate` is now `async` and returns `Promise<boolean>`, to await `prepare`. This only matters if you call the guard yourself.
+
+### Internal changes
+
+- New `test/jwks.spec.ts` suite, run against a local JWKS server: rotation, cooldown, cache max age, shared fetch, outage, timeout, ignored key types, no unverified fallback, no re-fetch on an issuer / audience mismatch. `issuer` / `audience` specs added to `test/info-providers.spec.ts`. The guard specs are now async and cover `prepare`.
+- Docs (README and site): JWKS section, `jwksUri`, `issuer` and `audience` options, `prepare()` hook. Also fixes the pipeline order stated in the README and on the Principal providers page: parameter decorators run after the guard, not before.
+
 ---
 
 ## 5.0.0

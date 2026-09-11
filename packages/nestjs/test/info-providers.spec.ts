@@ -116,6 +116,33 @@ describe('GrantedJwtPrincipalProvider', () => {
     });
   });
 
+  describe('issuer & audience', () => {
+    const claims = { sub: 'alice', iss: 'https://gateway.acme', aud: 'orders-api' };
+
+    it('are not checked when unset', () => {
+      const provider = new GrantedJwtPrincipalProvider({ base64Key: secret, algorithm: 'HS256' });
+      expect(provider.getUsernameFromRequest(bearer({ ...claims, iss: 'https://elsewhere', aud: 'billing-api' }))).toBe('alice');
+    });
+
+    it('accept a token matching one of the issuers and audiences', () => {
+      const provider = new GrantedJwtPrincipalProvider({ base64Key: secret, algorithm: 'HS256', issuer: ['https://idp.acme', 'https://gateway.acme'], audience: /^orders-/ });
+      expect(provider.getUsernameFromRequest(bearer(claims))).toBe('alice');
+    });
+
+    it('yield anonymous on an unexpected issuer or audience', () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const provider = new GrantedJwtPrincipalProvider({ base64Key: secret, algorithm: 'HS256', issuer: 'https://gateway.acme', audience: ['orders-api'] });
+      expect(provider.getUsernameFromRequest(bearer({ ...claims, iss: 'https://evil.example' }))).toBe('anonymous');
+      expect(provider.getUsernameFromRequest(bearer({ ...claims, aud: 'billing-api' }))).toBe('anonymous');
+      expect(warn.mock.calls.flat().join(' ')).toMatch(/issuer invalid[\s\S]*audience invalid/);
+      warn.mockRestore();
+    });
+
+    it('need a key — an unverified token could claim anything', () => {
+      expect(() => new GrantedJwtPrincipalProvider({ issuer: 'https://gateway.acme' })).toThrow('need a key');
+    });
+  });
+
   it('never logs the token or the key on failure', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const provider = new GrantedJwtPrincipalProvider({ base64Key: 'other-secret', algorithm: 'HS256' });
