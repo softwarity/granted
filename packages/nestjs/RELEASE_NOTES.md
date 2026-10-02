@@ -2,6 +2,10 @@
 
 ## NEXT RELEASE
 
+---
+
+## 5.2.0
+
 ### New features
 
 - **With `jwksUri`, each key verifies with its own algorithm — no `algorithm` to configure.** The provider used to verify with a single configured algorithm (default `RS256`), which had to match the one the IdP signs with: an IdP moving to ES256 turned every caller anonymous (`invalid algorithm`) until the service was reconfigured. The algorithm now comes from the JWK Set: the key is picked by the token's `kid` and verifies with the `alg` that key declares. A set can mix algorithms, and the issuer can change algorithm without any change on the service side. A key published without `alg` gets the one its type implies — RS256 for RSA, ES256 / ES384 / ES512 for EC on P-256 / P-384 / P-521, EdDSA for Ed25519. The algorithm never comes from the token: one whose `alg` header differs from its key's is rejected, which rules out `alg: none` and RSA/HMAC confusion attacks.
