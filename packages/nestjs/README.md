@@ -30,7 +30,7 @@ findOrders(@Username() me: string, @Roles() roles: string[]) { /* ... */ }
 - 🧹 **Known-roles filtering** — keep only the roles your module owns, ignoring those a shared token carries for other services
 - 🔌 **Pluggable principal provider** — HTTP headers (JSON or CSV roles) or a verified JWT
 - 🔑 **JWT verification** with **IdP presets** — RFC 9068/SCIM, Azure AD/Entra, Keycloak, Okta — or a fully custom claim mapping
-- 🔄 **JWKS key rotation** — verification keys fetched from the IdP's JWKS endpoint, cached, and re-fetched when it rotates them
+- 🔄 **JWKS key rotation** — verification keys fetched from the IdP's JWKS endpoint, cached, and re-fetched when it rotates them; each key verifies with its own algorithm (RSA, ECDSA, EdDSA), nothing to configure
 - 🏢 **Multi-tenant aware** — `@Tenant()` injection plus `isTenant` to block cross-tenant access
 - 🪶 **Tiny & dependency-light** — just `jsonwebtoken`; works on NestJS 10, 11 & 12
 
@@ -274,11 +274,27 @@ GrantedJwtPrincipalProvider.keycloak({
 });
 ```
 
-Keys are fetched on first use and cached. When a token fails verification — typically because it is signed by a key rotated in after the last fetch — the set is re-fetched once and the token verified again. The key is picked by the token's `kid` header (every key is tried when it has none), with the configured `algorithm` (default `RS256`; set it to match your IdP, e.g. `ES256`). Only public signature keys are used: symmetric keys and `"use": "enc"` keys in the set are ignored.
+Keys are fetched on first use and cached. When a token fails verification — typically because it is signed by a key rotated in after the last fetch — the set is re-fetched once and the token verified again. The key is picked by the token's `kid` header (every key is tried when it has none). Only public signature keys are used: symmetric keys and `"use": "enc"` keys in the set are ignored.
+
+**The JWKS is enough — no algorithm to configure.** Each key verifies with the algorithm the set declares for it (its `alg`): RS256 / RS384 / RS512, PS256 / PS384 / PS512, ES256 / ES384 / ES512 or EdDSA. A set can mix them, and the IdP can move from one to another without any change here: the algorithm is chosen on the issuer side only. A key published without `alg` gets the one its type implies — RS256 for an RSA key, ES256 / ES384 / ES512 for an EC key on P-256 / P-384 / P-521, EdDSA for an Ed25519 key.
+
+The algorithm never comes from the token: a token whose `alg` header differs from its key's algorithm is rejected, which rules out `alg: none` and RSA/HMAC confusion attacks.
+
+To narrow what is accepted, set `algorithm` to one algorithm or a list — it is then an allowlist, and a token signed with anything else is rejected:
+
+```ts
+GrantedJwtPrincipalProvider.keycloak({
+  jwksUri: 'https://sso.example.com/realms/acme/protocol/openid-connect/certs',
+  algorithm: ['ES256', 'EdDSA'], // optional
+});
+```
+
+For a key published without `alg`, the allowlist also settles which algorithm it verifies with — set `algorithm: 'PS256'` for an IdP that signs PS256 with such keys. `none` and the HS* algorithms are refused at construction.
 
 | Option | Default | Purpose |
 |---|---|---|
 | `jwksUri` | — | JWK Set URL. Can't be combined with `base64Key` / `pemFile`. |
+| `algorithm` | — (each key's own) | Optional allowlist: one algorithm or an array. |
 | `jwksCacheMaxAge` | `600000` (10 min) | Keys older than this are re-fetched, so a key the IdP withdrew stops being accepted. |
 | `jwksCooldown` | `30000` (30 s) | Minimum delay between two fetches, so tokens with forged `kid`s can't make the provider hammer the IdP. |
 | `jwksTimeout` | `5000` (5 s) | Timeout of a fetch. |
@@ -303,10 +319,10 @@ Worth it when the service can be reached without going through the gateway, or w
 
 ```ts
 new GrantedJwtPrincipalProvider({
-  algorithm: 'RS256',
+  algorithm: 'RS256',                // with a PEM key — default 'ES256'
   pemFile: 'config/jwt_public_key.pem',
   // or base64Key: '-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----',
-  // or jwksUri: 'https://idp.example.com/.well-known/jwks.json',
+  // or jwksUri: 'https://idp.example.com/.well-known/jwks.json' — no algorithm needed
   usernameClaim: 'sub',              // default 'sub'
   rolesClaim: 'realm_access.roles',  // default 'roles' — dotted paths supported
   tenantClaim: 'tid',                // default 'tenant'

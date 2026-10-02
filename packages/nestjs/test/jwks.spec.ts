@@ -1,18 +1,44 @@
-import { generateKeyPairSync, KeyObject } from 'crypto';
+import { generateKeyPairSync, KeyObject, sign as signBytes } from 'crypto';
 import { createServer } from 'http';
 import { AddressInfo } from 'net';
 import * as jwt from 'jsonwebtoken';
-import { GrantedJwtPrincipalProvider, GrantedJwtPrincipalProviderConfig } from '../src/services/granted-info.jwt-provider';
+import { GrantedJwtPrincipalProvider, GrantedJwtPrincipalProviderConfig, JwtAlgorithm } from '../src/services/granted-info.jwt-provider';
 
 interface SigningKey {
   kid: string;
+  alg: JwtAlgorithm;
   privateKey: KeyObject;
+  publicKey: KeyObject;
   jwk: Record<string, unknown>;
 }
 
+function signingKey(kid: string, alg: JwtAlgorithm, { privateKey, publicKey }: { privateKey: KeyObject; publicKey: KeyObject }): SigningKey {
+  return { kid, alg, privateKey, publicKey, jwk: { ...publicKey.export({ format: 'jwk' }), kid, use: 'sig', alg } };
+}
+
 function rsaKey(kid: string): SigningKey {
-  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  return { kid, privateKey, jwk: { ...publicKey.export({ format: 'jwk' }), kid, use: 'sig', alg: 'RS256' } };
+  return signingKey(kid, 'RS256', generateKeyPairSync('rsa', { modulusLength: 2048 }));
+}
+
+function ecKey(kid: string): SigningKey {
+  return signingKey(kid, 'ES256', generateKeyPairSync('ec', { namedCurve: 'P-256' }));
+}
+
+function edKey(kid: string): SigningKey {
+  return signingKey(kid, 'EdDSA', generateKeyPairSync('ed25519'));
+}
+
+/** The same key, published without `alg` — as Microsoft Entra ID does. */
+function withoutAlg({ alg: _alg, ...jwk }: Record<string, unknown>): Record<string, unknown> {
+  return jwk;
+}
+
+const base64url = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+
+/** `jsonwebtoken` can't sign EdDSA: the token is assembled by hand. */
+function signEdDsa(key: SigningKey, payload: object): string {
+  const signed = `${base64url({ alg: 'EdDSA', typ: 'JWT', kid: key.kid })}.${base64url(payload)}`;
+  return `${signed}.${signBytes(null, Buffer.from(signed), key.privateKey).toString('base64url')}`;
 }
 
 function reqWithToken(token: string) {
@@ -73,7 +99,10 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
   }
 
   function sign(key: SigningKey, payload: object = { sub: 'alice', roles: ['ADMIN'] }, options: jwt.SignOptions = { keyid: key.kid }) {
-    return jwt.sign(payload, key.privateKey, { algorithm: 'RS256', ...options });
+    if (key.alg === 'EdDSA') {
+      return signEdDsa(key, payload);
+    }
+    return jwt.sign(payload, key.privateKey, { algorithm: key.alg, ...options });
   }
 
   /** Goes through prepare() first, as the guard does. */
@@ -168,8 +197,7 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
       { kty: 'oct', k: Buffer.from(secret).toString('base64url'), kid: 'hmac' },
       { ...keyB.jwk, use: 'enc' },
     ];
-    const hs256 = provider({ algorithm: 'HS256' });
-    expect(await usernameOf(hs256, jwt.sign({ sub: 'mallory' }, secret, { algorithm: 'HS256', keyid: 'hmac' }))).toBe('anonymous');
+    expect(await usernameOf(provider(), jwt.sign({ sub: 'mallory' }, secret, { algorithm: 'HS256', keyid: 'hmac' }))).toBe('anonymous');
     expect(await usernameOf(provider(), sign(keyB))).toBe('anonymous');
   });
 
@@ -210,5 +238,120 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
 
   it('rejects jwksUri combined with a PEM key', () => {
     expect(() => new GrantedJwtPrincipalProvider({ jwksUri: `${baseUrl}/jwks.json`, base64Key: 'pem' })).toThrow('jwksUri cannot be combined');
+  });
+
+  describe('algorithm', () => {
+    const ec = ecKey('key-ec');
+    const ed = edKey('key-ed');
+    const warnings = () => warn.mock.calls.flat().join(' ');
+
+    beforeEach(() => {
+      published = [keyA.jwk, ec.jwk, ed.jwk];
+    });
+
+    it('verifies RS256, ES256 and EdDSA tokens against the same set, with no algorithm configured', async () => {
+      const p = provider();
+      expect(await usernameOf(p, sign(keyA, { sub: 'rsa' }))).toBe('rsa');
+      expect(await usernameOf(p, sign(ec, { sub: 'ec' }))).toBe('ec');
+      expect(await usernameOf(p, sign(ed, { sub: 'ed' }))).toBe('ed');
+      expect(fetches).toBe(1);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('rejects a token whose kid is not in the set', async () => {
+      expect(await usernameOf(provider(), sign(keyA, { sub: 'alice' }, { keyid: 'unknown' }))).toBe('anonymous');
+      expect(warnings()).toContain('no JWKS key matches the token');
+    });
+
+    it('rejects a token announcing another algorithm than its key', async () => {
+      const p = provider();
+      // Each of these would verify if the token's `alg` were trusted.
+      const rs384 = jwt.sign({ sub: 'mallory' }, keyA.privateKey, { algorithm: 'RS384', keyid: keyA.kid });
+      const hs256 = jwt.sign({ sub: 'mallory' }, keyA.publicKey.export({ type: 'spki', format: 'pem' }), { algorithm: 'HS256', keyid: keyA.kid });
+      const unsigned = jwt.sign({ sub: 'mallory' }, null, { algorithm: 'none', keyid: keyA.kid });
+      for (const token of [rs384, hs256, unsigned]) {
+        warn.mockClear();
+        expect(await usernameOf(p, token)).toBe('anonymous');
+        expect(warnings()).toContain('invalid algorithm');
+      }
+    });
+
+    it('used as an allowlist, rejects the keys of any other algorithm', async () => {
+      const p = provider({ algorithm: ['RS256', 'EdDSA'] });
+      expect(await usernameOf(p, sign(keyA))).toBe('alice');
+      expect(await usernameOf(p, sign(ed))).toBe('alice');
+      expect(await usernameOf(p, sign(ec))).toBe('anonymous');
+      expect(warnings()).toContain('invalid algorithm');
+      expect(await usernameOf(provider({ algorithm: 'ES256' }), sign(ec))).toBe('alice');
+      expect(await usernameOf(provider({ algorithm: 'ES256' }), sign(keyA))).toBe('anonymous');
+    });
+
+    it('refuses none and HS* at construction, and EdDSA without a JWKS', () => {
+      expect(() => provider({ algorithm: 'HS256' })).toThrow('HS256 cannot be used with jwksUri');
+      expect(() => provider({ algorithm: ['RS256', 'none'] })).toThrow('none cannot be used with jwksUri');
+      expect(() => provider({ algorithm: [] })).toThrow('empty list');
+      expect(() => new GrantedJwtPrincipalProvider({ base64Key: 'pem', algorithm: 'EdDSA' })).toThrow('only supported with jwksUri');
+    });
+
+    it('infers the algorithm of a key published without alg from its type', async () => {
+      published = [keyA.jwk, ec.jwk, ed.jwk].map(withoutAlg);
+      const p = provider();
+      expect(await usernameOf(p, sign(keyA))).toBe('alice');
+      expect(await usernameOf(p, sign(ec))).toBe('alice');
+      expect(await usernameOf(p, sign(ed))).toBe('alice');
+      // An RSA key without alg is taken as RS256, whatever the token says.
+      expect(await usernameOf(p, jwt.sign({ sub: 'alice' }, keyA.privateKey, { algorithm: 'RS384', keyid: keyA.kid }))).toBe('anonymous');
+    });
+
+    it('lets the allowlist choose the algorithm of a key published without alg', async () => {
+      published = [withoutAlg(keyA.jwk)];
+      const ps256 = jwt.sign({ sub: 'alice' }, keyA.privateKey, { algorithm: 'PS256', keyid: keyA.kid });
+      expect(await usernameOf(provider(), ps256)).toBe('anonymous');
+      expect(await usernameOf(provider({ algorithm: 'PS256' }), ps256)).toBe('alice');
+      expect(await usernameOf(provider({ algorithm: 'PS256' }), sign(keyA))).toBe('anonymous');
+    });
+
+    it('ignores a key whose alg its type cannot verify', async () => {
+      published = [
+        { ...keyA.jwk, alg: 'ES256' },
+        { ...ec.jwk, alg: 'HS256' },
+      ];
+      expect(await usernameOf(provider(), sign(keyA))).toBe('anonymous');
+      expect(await usernameOf(provider(), sign(ec))).toBe('anonymous');
+    });
+
+    describe('EdDSA', () => {
+      it('rejects a tampered token', async () => {
+        const [header, , signature] = sign(ed, { sub: 'alice' }).split('.');
+        expect(await usernameOf(provider(), `${header}.${base64url({ sub: 'mallory' })}.${signature}`)).toBe('anonymous');
+        expect(warnings()).toContain('invalid signature');
+      });
+
+      it('rejects a token signed by another Ed25519 key', async () => {
+        const forged = signEdDsa({ ...edKey('other'), kid: ed.kid }, { sub: 'mallory' });
+        expect(await usernameOf(provider(), forged)).toBe('anonymous');
+      });
+
+      it('checks the validity dates, without re-fetching — the key is known', async () => {
+        const p = provider();
+        const now = Math.floor(Date.now() / 1000);
+        expect(await usernameOf(p, sign(ed, { sub: 'alice', nbf: now - 60, exp: now + 60 }))).toBe('alice');
+        advance(31_000);
+        expect(await usernameOf(p, sign(ed, { sub: 'alice', exp: now - 60 }))).toBe('anonymous');
+        expect(await usernameOf(p, sign(ed, { sub: 'alice', nbf: now + 600 }))).toBe('anonymous');
+        expect(fetches).toBe(1);
+        expect(warnings()).toMatch(/jwt expired[\s\S]*jwt not active/);
+      });
+
+      it('checks issuer and audience when configured', async () => {
+        const p = provider({ issuer: ['https://idp.acme', 'https://gateway.acme'], audience: /^orders-/ });
+        const claims = { sub: 'alice', iss: 'https://gateway.acme', aud: ['billing-api', 'orders-api'] };
+        expect(await usernameOf(p, sign(ed, claims))).toBe('alice');
+        expect(await usernameOf(p, sign(ed, { ...claims, iss: 'https://evil.example' }))).toBe('anonymous');
+        expect(await usernameOf(p, sign(ed, { ...claims, aud: 'billing-api' }))).toBe('anonymous');
+        expect(await usernameOf(p, sign(ed, { sub: 'alice' }))).toBe('anonymous');
+        expect(warnings()).toMatch(/issuer invalid[\s\S]*audience invalid/);
+      });
+    });
   });
 });

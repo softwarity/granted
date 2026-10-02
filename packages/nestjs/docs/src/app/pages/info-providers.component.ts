@@ -142,15 +142,41 @@ export class AppModule &#123;&#125;</app-code>
       </li>
     </ul>
     <p>
-      The key is picked by the token's <code>kid</code> header (every key is tried when it has none), with the
-      configured <code>algorithm</code> — default <code>RS256</code>, set it to match your IdP (e.g.
-      <code>ES256</code>). Only public signature keys are used: symmetric keys and
-      <code>"use": "enc"</code> keys in the set are ignored.
+      The key is picked by the token's <code>kid</code> header (every key is tried when it has none). Only
+      public signature keys are used: symmetric keys and <code>"use": "enc"</code> keys in the set are
+      ignored.
+    </p>
+    <p>
+      <strong>The JWKS is enough — no algorithm to configure.</strong> Each key verifies with the algorithm
+      the set declares for it (its <code>alg</code>): RS256 / RS384 / RS512, PS256 / PS384 / PS512,
+      ES256 / ES384 / ES512 or EdDSA. A set can mix them, and the IdP can move from one to another without
+      any change here: the algorithm is chosen on the issuer side only. A key published without
+      <code>alg</code> gets the one its type implies — RS256 for an RSA key, ES256 / ES384 / ES512 for an EC
+      key on P-256 / P-384 / P-521, EdDSA for an Ed25519 key.
+    </p>
+    <div class="callout">
+      <strong>The algorithm never comes from the token.</strong> A token whose <code>alg</code> header
+      differs from its key's algorithm is rejected, which rules out <code>alg: none</code> and RSA/HMAC
+      confusion attacks.
+    </div>
+    <p>
+      To narrow what is accepted, set <code>algorithm</code> to one algorithm or a list — it is then an
+      allowlist, and a token signed with anything else is rejected:
+    </p>
+    <app-code lang="ts">GrantedJwtPrincipalProvider.keycloak(&#123;
+  jwksUri: 'https://sso.example.com/realms/acme/protocol/openid-connect/certs',
+  algorithm: ['ES256', 'EdDSA'], // optional
+&#125;);</app-code>
+    <p>
+      For a key published without <code>alg</code>, the allowlist also settles which algorithm it verifies
+      with — set <code>algorithm: 'PS256'</code> for an IdP that signs PS256 with such keys.
+      <code>none</code> and the HS* algorithms are refused at construction.
     </p>
     <table>
       <thead><tr><th>Option</th><th>Default</th><th>Notes</th></tr></thead>
       <tbody>
         <tr><td><code>jwksUri</code></td><td>—</td><td>JWK Set URL. Can't be combined with <code>base64Key</code> / <code>pemFile</code>.</td></tr>
+        <tr><td><code>algorithm</code></td><td>— (each key's own)</td><td>Optional allowlist: one algorithm or an array.</td></tr>
         <tr><td><code>jwksCacheMaxAge</code></td><td><code>600000</code> (10 min)</td><td>Age, in ms, after which cached keys are re-fetched.</td></tr>
         <tr><td><code>jwksCooldown</code></td><td><code>30000</code> (30 s)</td><td>Minimum delay, in ms, between two fetches.</td></tr>
         <tr><td><code>jwksTimeout</code></td><td><code>5000</code> (5 s)</td><td>Timeout, in ms, of a fetch.</td></tr>
@@ -187,7 +213,7 @@ export class AppModule &#123;&#125;</app-code>
     <table>
       <thead><tr><th>Option</th><th>Type</th><th>Notes</th></tr></thead>
       <tbody>
-        <tr><td><code>algorithm</code></td><td><code>Algorithm</code></td><td>e.g. <code>'RS256'</code> (default), <code>'ES256'</code>, <code>'PS256'</code>.</td></tr>
+        <tr><td><code>algorithm</code></td><td><code>JwtAlgorithm | JwtAlgorithm[]</code></td><td>With a PEM key: the signature algorithm — <code>'ES256'</code> by default, or e.g. <code>'RS256'</code>, <code>'PS256'</code>. With <code>jwksUri</code>: not needed, an optional allowlist.</td></tr>
         <tr><td><code>pemFile</code></td><td><code>string</code></td><td>Path to a PEM public key; read once at construction.</td></tr>
         <tr><td><code>base64Key</code></td><td><code>string</code></td><td>Inline PEM public key — alternative to <code>pemFile</code>.</td></tr>
         <tr><td><code>jwksUri</code></td><td><code>string</code></td><td>JWK Set URL — alternative to a PEM, with key rotation. See <em>Keys from a JWKS endpoint</em> above.</td></tr>

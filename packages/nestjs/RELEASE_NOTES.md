@@ -2,6 +2,25 @@
 
 ## NEXT RELEASE
 
+### New features
+
+- **With `jwksUri`, each key verifies with its own algorithm — no `algorithm` to configure.** The provider used to verify with a single configured algorithm (default `RS256`), which had to match the one the IdP signs with: an IdP moving to ES256 turned every caller anonymous (`invalid algorithm`) until the service was reconfigured. The algorithm now comes from the JWK Set: the key is picked by the token's `kid` and verifies with the `alg` that key declares. A set can mix algorithms, and the issuer can change algorithm without any change on the service side. A key published without `alg` gets the one its type implies — RS256 for RSA, ES256 / ES384 / ES512 for EC on P-256 / P-384 / P-521, EdDSA for Ed25519. The algorithm never comes from the token: one whose `alg` header differs from its key's is rejected, which rules out `alg: none` and RSA/HMAC confusion attacks.
+- **EdDSA (Ed25519) tokens, with `jwksUri`.** On top of RS256 / RS384 / RS512, PS256 / PS384 / PS512 and ES256 / ES384 / ES512. `jsonwebtoken` has no EdDSA, so Node's `crypto` verifies the signature and the provider checks `exp`, `nbf`, `issuer` and `audience` the same way. Not available with a PEM key (`base64Key` / `pemFile`): asking for it there throws at construction.
+- **`algorithm` accepts a list.** `algorithm: ['ES256', 'EdDSA']`. New exported type `JwtAlgorithm` (`jsonwebtoken`'s `Algorithm`, plus `'EdDSA'`).
+
+### Changes
+
+- **Breaking — with a PEM key (`base64Key` / `pemFile`), `algorithm` now defaults to `ES256` instead of `RS256`.** A provider that relied on the default with an RSA key must now say so — `algorithm: 'RS256'` — or every token is treated as anonymous (`invalid algorithm`). Providers that already set `algorithm` are not affected. This default is never read with `jwksUri`: there, each key brings its own algorithm.
+- **With `jwksUri`, `algorithm` is now optional and acts as an allowlist.** Unset, every key of the set is accepted with its own algorithm — it no longer defaults to `RS256`, so a set publishing ES256 or EdDSA keys now has their tokens accepted too; set `algorithm: 'RS256'` to keep the previous restriction. Set, a token signed with another algorithm is rejected. For a key published without `alg`, the allowlist also settles which algorithm it verifies with, so `algorithm: 'PS256'` keeps working with such keys. A key whose declared `alg` its type can't verify (an RSA key announcing `ES256`) verifies nothing.
+- With `jwksUri`, `none` and the HS* algorithms now throw at construction, as does an empty list. Such a provider used to start and treat every token as anonymous.
+- With `jwksUri` and no `algorithm`, the provider's `algorithm` property is `undefined`, and the warning logged on a failed verification reads `JWT verification failed (JWKS)`.
+
+### Internal changes
+
+- `test/jwks.spec.ts`: RS256, ES256 and EdDSA tokens verified against one set with no `algorithm`; allowlist; unknown `kid`; tokens announcing another algorithm than their key (`RS384`, `HS256` signed with the public key, `none`); keys without `alg`, or with one their type can't verify; EdDSA signature, dates, issuer and audience.
+- `test/info-providers.spec.ts`: `ES256` default with a PEM key, list of algorithms.
+- Docs (README and site): the JWKS is enough, the algorithm is set on the issuer side only.
+
 ---
 
 ## 5.1.0

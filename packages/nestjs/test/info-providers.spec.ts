@@ -1,3 +1,4 @@
+import { generateKeyPairSync, KeyObject } from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import { GrantedPrincipalProvider } from '../src/services/granted-info.provider';
 import { GrantedJwtPrincipalProvider } from '../src/services/granted-info.jwt-provider';
@@ -114,6 +115,29 @@ describe('GrantedJwtPrincipalProvider', () => {
       const req = bearer({ email: 'alice@acme', groups: ['Admins'] });
       expect(provider.getUsernameFromRequest(req)).toBe('alice@acme');
     });
+  });
+
+  it('defaults to ES256 with a PEM key', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const pem = (key: KeyObject) => key.export({ type: 'spki', format: 'pem' }) as string;
+    const ec = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const withToken = (token: string) => reqWithHeaders({ authorization: `Bearer ${token}` });
+    const es256 = jwt.sign({ sub: 'alice' }, ec.privateKey, { algorithm: 'ES256' });
+    const rs256 = jwt.sign({ sub: 'alice' }, rsa.privateKey, { algorithm: 'RS256' });
+    expect(new GrantedJwtPrincipalProvider({ base64Key: pem(ec.publicKey) }).getUsernameFromRequest(withToken(es256))).toBe('alice');
+    // An RSA key no longer works by default: RS256 has to be asked for.
+    expect(new GrantedJwtPrincipalProvider({ base64Key: pem(rsa.publicKey) }).getUsernameFromRequest(withToken(rs256))).toBe('anonymous');
+    expect(new GrantedJwtPrincipalProvider({ base64Key: pem(rsa.publicKey), algorithm: 'RS256' }).getUsernameFromRequest(withToken(rs256))).toBe('alice');
+    warn.mockRestore();
+  });
+
+  it('accepts a list of algorithms', () => {
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const req = bearer({ sub: 'alice' });
+    expect(new GrantedJwtPrincipalProvider({ base64Key: secret, algorithm: ['HS384', 'HS256'] }).getUsernameFromRequest(req)).toBe('alice');
+    expect(new GrantedJwtPrincipalProvider({ base64Key: secret, algorithm: ['HS384', 'HS512'] }).getUsernameFromRequest(bearer({ sub: 'alice' }))).toBe('anonymous');
+    warn.mockRestore();
   });
 
   describe('issuer & audience', () => {

@@ -1,9 +1,12 @@
-import { createPublicKey, KeyObject } from 'crypto';
+import { createPublicKey, KeyObject, verify as verifySignature } from 'crypto';
 import { Request } from 'express';
 import * as fs from 'fs';
 import { IncomingMessage } from 'http';
-import { Algorithm, decode, JsonWebTokenError, NotBeforeError, TokenExpiredError, verify, VerifyOptions } from 'jsonwebtoken';
+import { Algorithm, decode, JsonWebTokenError, Jwt, JwtPayload, NotBeforeError, TokenExpiredError, verify, VerifyOptions } from 'jsonwebtoken';
 import { IGrantedPrincipalProvider } from './igranted-info.provider';
+
+/** `jsonwebtoken`'s algorithms, plus EdDSA — only with `jwksUri`, where Node's `crypto` verifies it. */
+export type JwtAlgorithm = Algorithm | 'EdDSA';
 
 /** Key material, signature algorithm and expected issuer / audience — what a preset can't infer. */
 export interface JwtKeyConfig {
@@ -15,7 +18,8 @@ export interface JwtKeyConfig {
    * URL of the JWK Set publishing the IdP's signing keys, e.g.
    * `https://idp.example.com/.well-known/jwks.json`. Keys are fetched on first
    * use, cached, and re-fetched when a token fails verification — so a key
-   * rotation needs no restart. Can't be combined with `base64Key` / `pemFile`.
+   * rotation needs no restart. Each key verifies with its own algorithm, so
+   * `algorithm` isn't needed. Can't be combined with `base64Key` / `pemFile`.
    */
   jwksUri?: string;
   /** Age (ms) after which cached JWKS keys are re-fetched. Defaults to 10 minutes. */
@@ -27,8 +31,16 @@ export interface JwtKeyConfig {
   jwksCooldown?: number;
   /** Timeout (ms) of a JWKS fetch. Defaults to 5 seconds. */
   jwksTimeout?: number;
-  /** Signature algorithm. Defaults to `'RS256'`. */
-  algorithm?: Algorithm;
+  /**
+   * With a PEM key (`base64Key` / `pemFile`): the signature algorithm. Defaults to `'ES256'`.
+   *
+   * With `jwksUri`: optional. Each key verifies with the algorithm the JWK Set
+   * gives it — never the one the token announces — so the IdP can change
+   * algorithm without any change here. When set, it is an allowlist: a token
+   * signed with another algorithm is rejected. Only asymmetric algorithms
+   * (RS*, PS*, ES*, EdDSA) are accepted with a JWKS.
+   */
+  algorithm?: JwtAlgorithm | JwtAlgorithm[];
   /**
    * Accepted `iss` value(s). Not checked when unset — e.g. behind a gateway
    * that already validated the token. Needs a key (`base64Key`, `pemFile` or `jwksUri`).
@@ -71,6 +83,28 @@ export const JWT_CLAIM_PRESETS = {
 interface JwksKey {
   kid?: string;
   key: KeyObject;
+  /** Algorithms this key verifies with — set from the JWK Set, never from a token. */
+  algorithms: JwtAlgorithm[];
+}
+
+/** What a JWKS key may verify: asymmetric signatures only — never `none`, never a shared-secret HS*. */
+const JWKS_ALGORITHMS: JwtAlgorithm[] = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256', 'ES384', 'ES512', 'EdDSA'];
+
+const EC_CURVE_ALGORITHMS: Record<string, JwtAlgorithm> = { prime256v1: 'ES256', secp384r1: 'ES384', secp521r1: 'ES512' };
+
+/** Algorithms a key of this type can verify, the one assumed for a JWK without `alg` first. */
+function keyAlgorithms(key: KeyObject): JwtAlgorithm[] {
+  switch (key.asymmetricKeyType) {
+    case 'rsa':
+      return ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512'];
+    case 'ec':
+      return [EC_CURVE_ALGORITHMS[key.asymmetricKeyDetails?.namedCurve]].filter(Boolean);
+    case 'ed25519':
+    case 'ed448':
+      return ['EdDSA'];
+    default:
+      return [];
+  }
 }
 
 /**
@@ -100,13 +134,15 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
   jwksCacheMaxAge: number;
   jwksCooldown: number;
   jwksTimeout: number;
-  algorithm: Algorithm;
+  algorithm: JwtAlgorithm | JwtAlgorithm[];
   issuer: string | string[];
   audience: string | RegExp | (string | RegExp)[];
   usernameClaim: string;
   rolesClaim: string;
   tenantClaim: string;
 
+  /** `algorithm` as a list. Undefined with a JWKS and no allowlist: each key's own algorithm is accepted. */
+  private algorithms: JwtAlgorithm[] | undefined;
   private jwks: JwksKey[] = [];
   /** Last successful JWKS fetch — drives `jwksCacheMaxAge`. */
   private jwksFetchedAt = 0;
@@ -128,7 +164,21 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
     this.jwksCacheMaxAge = conf.jwksCacheMaxAge ?? 600_000;
     this.jwksCooldown = conf.jwksCooldown ?? 30_000;
     this.jwksTimeout = conf.jwksTimeout ?? 5_000;
-    this.algorithm = conf.algorithm || 'RS256';
+    // The default is for a PEM key only: with a JWKS, each key brings its own algorithm.
+    this.algorithm = conf.algorithm || (conf.jwksUri ? undefined : 'ES256');
+    this.algorithms = this.algorithm ? [this.algorithm].flat() : undefined;
+    if (this.algorithms?.length === 0) {
+      throw new Error('[nestjs-granted] algorithm is an empty list: no token could be verified');
+    }
+    if (conf.jwksUri) {
+      // A JWK Set publishes public keys: `none` and the shared-secret HS* have no place here.
+      const refused = (this.algorithms || []).filter((alg) => !JWKS_ALGORITHMS.includes(alg));
+      if (refused.length) {
+        throw new Error(`[nestjs-granted] algorithm ${refused.join(', ')} cannot be used with jwksUri, which accepts ${JWKS_ALGORITHMS.join(', ')}`);
+      }
+    } else if (this.algorithms.includes('EdDSA')) {
+      throw new Error('[nestjs-granted] EdDSA is only supported with jwksUri');
+    }
     this.issuer = conf.issuer;
     this.audience = conf.audience;
     this.usernameClaim = conf.usernameClaim || 'sub';
@@ -238,7 +288,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
       // Reached without prepare() (not through the guard): no fetch possible
       // here, so only the keys already cached can verify the token.
       try {
-        return this.verifyWithKeys(token, decode(token, { complete: true })?.header.kid, this.jwks);
+        return this.verifyWithKeys(token, decode(token, { complete: true }), this.jwks);
       } catch (err) {
         return this.verificationFailed(err);
       }
@@ -247,7 +297,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
       return decode(token);
     }
     try {
-      return verify(token, this.base64Key, this.verifyOptions());
+      return verify(token, this.base64Key, this.verifyOptions(this.algorithms));
     } catch (err) {
       return this.verificationFailed(err);
     }
@@ -257,39 +307,51 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
    * `jsonwebtoken` skips an unset `issuer` / `audience`. The cast is for the
    * arrays: its types want non-empty tuples, a plain `string[]` is friendlier.
    */
-  private verifyOptions(): VerifyOptions {
-    return { algorithms: [this.algorithm], issuer: this.issuer, audience: this.audience } as VerifyOptions;
+  private verifyOptions(algorithms: JwtAlgorithm[]): VerifyOptions {
+    return { algorithms, issuer: this.issuer, audience: this.audience } as VerifyOptions;
   }
 
   /** Verifies against the cached JWKS; on failure, re-fetches it once and retries — the IdP may have rotated its keys. */
   private async verifyWithJwks(token: string): Promise<any> {
-    const header = decode(token, { complete: true })?.header;
-    if (!header) {
+    const jwt = decode(token, { complete: true });
+    if (!jwt) {
       return this.verificationFailed(new JsonWebTokenError('jwt malformed'));
     }
     const cached = await this.getJwks(false);
     try {
-      return this.verifyWithKeys(token, header.kid, cached);
+      return this.verifyWithKeys(token, jwt, cached);
     } catch (err) {
       const refreshed = signatureMatched(err) ? cached : await this.getJwks(true);
       if (refreshed === cached) {
         return this.verificationFailed(err);
       }
       try {
-        return this.verifyWithKeys(token, header.kid, refreshed);
+        return this.verifyWithKeys(token, jwt, refreshed);
       } catch (retryErr) {
         return this.verificationFailed(retryErr);
       }
     }
   }
 
-  /** Verifies with the key matching `kid` or, when the token has none, with each key in turn. */
-  private verifyWithKeys(token: string, kid: string | undefined, keys: JwksKey[]): any {
+  /**
+   * Verifies with the key matching `kid` or, when the token has none, with each
+   * key in turn. The algorithm is the key's: the token's `alg` only has to agree
+   * with it. Taking it from the token is what `alg: none` and RS/HS confusion
+   * attacks rely on.
+   */
+  private verifyWithKeys(token: string, jwt: Jwt | null, keys: JwksKey[]): any {
+    if (!jwt) {
+      throw new JsonWebTokenError('jwt malformed');
+    }
+    const { kid, alg } = jwt.header;
     const candidates = kid ? keys.filter((jwk) => jwk.kid === kid) : keys;
     let failure: unknown = new JsonWebTokenError('no JWKS key matches the token');
-    for (const { key } of candidates) {
+    for (const { key, algorithms } of candidates) {
       try {
-        return verify(token, key, this.verifyOptions());
+        if (!algorithms.includes(alg as JwtAlgorithm)) {
+          throw new JsonWebTokenError('invalid algorithm');
+        }
+        return alg === 'EdDSA' ? this.verifyEdDsa(token, jwt, key) : verify(token, key, this.verifyOptions(algorithms));
       } catch (err) {
         if (signatureMatched(err)) {
           throw err;
@@ -298,6 +360,45 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
       }
     }
     throw failure;
+  }
+
+  /** `jsonwebtoken` has no EdDSA: `crypto` checks the signature, then the claims are checked the way `jsonwebtoken` does. */
+  private verifyEdDsa(token: string, jwt: Jwt, key: KeyObject): JwtPayload {
+    const signed = token.slice(0, token.lastIndexOf('.'));
+    if (!verifySignature(null, Buffer.from(signed), key, Buffer.from(jwt.signature, 'base64url'))) {
+      throw new JsonWebTokenError('invalid signature');
+    }
+    const payload = jwt.payload;
+    if (!payload || typeof payload !== 'object') {
+      throw new JsonWebTokenError('jwt malformed');
+    }
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.nbf !== undefined) {
+      if (typeof payload.nbf !== 'number') {
+        throw new JsonWebTokenError('invalid nbf value');
+      }
+      if (payload.nbf > now) {
+        throw new NotBeforeError('jwt not active', new Date(payload.nbf * 1000));
+      }
+    }
+    if (payload.exp !== undefined) {
+      if (typeof payload.exp !== 'number') {
+        throw new JsonWebTokenError('invalid exp value');
+      }
+      if (now >= payload.exp) {
+        throw new TokenExpiredError('jwt expired', new Date(payload.exp * 1000));
+      }
+    }
+    if (this.audience) {
+      const accepted = [this.audience].flat();
+      if (![payload.aud].flat().some((aud) => accepted.some((candidate) => (candidate instanceof RegExp ? candidate.test(aud) : candidate === aud)))) {
+        throw new JsonWebTokenError(`jwt audience invalid. expected: ${accepted.join(' or ')}`);
+      }
+    }
+    if (this.issuer && ![this.issuer].flat().includes(payload.iss)) {
+      throw new JsonWebTokenError(`jwt issuer invalid. expected: ${this.issuer}`);
+    }
+    return payload;
   }
 
   /**
@@ -349,18 +450,34 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
       .filter((jwk: any) => jwk.use !== 'enc')
       .flatMap((jwk: any) => {
         try {
-          return [{ kid: jwk.kid, key: createPublicKey({ key: jwk, format: 'jwk' }) }];
+          const key = createPublicKey({ key: jwk, format: 'jwk' });
+          return [{ kid: jwk.kid, key, algorithms: this.jwksKeyAlgorithms(key, jwk.alg) }];
         } catch {
           return [];
         }
       });
   }
 
+  /**
+   * The `alg` the JWK declares, provided its key type can verify it. Without
+   * `alg`: the one the key type implies (RSA → RS256, EC → its curve's ES*,
+   * Ed25519 → EdDSA) or, when `algorithm` is configured, whichever of those
+   * the key type can verify — an RSA key may sign PS256 as well.
+   * Empty when nothing fits or the allowlist excludes it: the key verifies no token.
+   */
+  private jwksKeyAlgorithms(key: KeyObject, declared: unknown): JwtAlgorithm[] {
+    const possible = keyAlgorithms(key);
+    if (!this.algorithms) {
+      return declared === undefined ? possible.slice(0, 1) : possible.filter((alg) => alg === declared);
+    }
+    return possible.filter((alg) => this.algorithms.includes(alg) && (declared === undefined || alg === declared));
+  }
+
   private verificationFailed(err: unknown): object {
     // Never log the token or the key material. A failed verification
     // simply yields an anonymous request downstream.
     const reason = err instanceof Error ? err.message : 'unknown error';
-    console.warn(`[nestjs-granted] JWT verification failed (${this.algorithm}): ${reason}`);
+    console.warn(`[nestjs-granted] JWT verification failed (${this.algorithms?.join(', ') ?? 'JWKS'}): ${reason}`);
     return {};
   }
 }
