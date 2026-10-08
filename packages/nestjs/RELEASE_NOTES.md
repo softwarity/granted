@@ -2,6 +2,10 @@
 
 ## NEXT RELEASE
 
+---
+
+## 5.3.0
+
 ### New features
 
 - **Denials are diagnosable: the guard throws a `GrantedForbiddenException`.** Until now the guard returned `false` and a 403 said nothing about why — which spec failed, with which roles. It now throws `GrantedForbiddenException`, a `ForbiddenException` carrying `deniedSpec` (the `id` of the first spec that failed, e.g. `hasRole(ADMIN)`; an `and(...)` / `or(...)` is reported whole), `username`, `roles` (after hierarchy expansion and `knownRoles` filtering — what the specs saw) and `tenant`. The library logs nothing: the host app logs these in its own format from an exception filter (`@Catch(GrantedForbiddenException)`). The response body is unchanged — `{ "statusCode": 403, "message": "Forbidden resource", "error": "Forbidden" }` — so the caller learns nothing about the policy.
