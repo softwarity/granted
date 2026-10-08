@@ -1,10 +1,14 @@
-import { Reflector } from '@nestjs/core';
-import { ExecutionContext } from '@nestjs/common';
+import { BaseExceptionFilter, Reflector } from '@nestjs/core';
+import { ArgumentsHost, Catch, Controller, ExecutionContext, ForbiddenException, Get, INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
 import { AppGuard } from '../src/security/app.guard';
 import { GrantedTo } from '../src/decorators/granted-to.decorator';
 import { GrantedModuleOptions } from '../src/models/granted-module-options';
 import { GrantedPrincipalProvider } from '../src/services/granted-info.provider';
-import { hasRole, isAuthenticated } from '../src/security/boolean-spec';
+import { and, hasRole, isAuthenticated, isUser, or } from '../src/security/boolean-spec';
+import { GrantedModule } from '../src/granted.module';
+import { GrantedForbiddenException } from '../src/security/granted-forbidden.exception';
 
 // Class-level baseline + method-level tightening.
 @GrantedTo(isAuthenticated())
@@ -17,7 +21,7 @@ class SampleController {
 }
 
 function reqWithHeaders(headers: Record<string, string>) {
-  return { header: (n: string) => headers[n.toLowerCase()], headers } as any;
+  return { header: (n: string) => headers[n.toLowerCase()], headers, params: {}, query: {}, body: {} } as any;
 }
 
 function ctx(handler: unknown, cls: unknown, headers: Record<string, string>): ExecutionContext {
@@ -41,15 +45,15 @@ describe('AppGuard — class + method @GrantedTo merge', () => {
     // authenticated + ADMIN → allowed
     expect(await g.canActivate(ctx(proto.adminRoute, SampleController, { username: 'alice', roles: '["ADMIN"]' }))).toBe(true);
     // authenticated but missing ADMIN → method spec fails
-    expect(await g.canActivate(ctx(proto.adminRoute, SampleController, { username: 'alice', roles: '[]' }))).toBe(false);
+    await expect(g.canActivate(ctx(proto.adminRoute, SampleController, { username: 'alice', roles: '[]' }))).rejects.toBeInstanceOf(GrantedForbiddenException);
     // has ADMIN but anonymous → class spec fails
-    expect(await g.canActivate(ctx(proto.adminRoute, SampleController, { roles: '["ADMIN"]' }))).toBe(false);
+    await expect(g.canActivate(ctx(proto.adminRoute, SampleController, { roles: '["ADMIN"]' }))).rejects.toBeInstanceOf(GrantedForbiddenException);
   });
 
   it('applies the class-level spec to a method without its own decorator', async () => {
     const g = guard();
     expect(await g.canActivate(ctx(proto.memberRoute, SampleController, { username: 'alice' }))).toBe(true);
-    expect(await g.canActivate(ctx(proto.memberRoute, SampleController, {}))).toBe(false); // anonymous
+    await expect(g.canActivate(ctx(proto.memberRoute, SampleController, {}))).rejects.toBeInstanceOf(GrantedForbiddenException); // anonymous
   });
 
   it('is open when neither class nor method declares specs', async () => {
@@ -87,5 +91,89 @@ describe('AppGuard — provider prepare() hook', () => {
     await guard({ principalProvider }).canActivate(ctx(Plain.prototype.route, Plain, {}));
     await guard({ principalProvider, apply: false }).canActivate(ctx(SampleController.prototype.adminRoute, SampleController, {}));
     expect(principalProvider.prepare).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('AppGuard — GrantedForbiddenException', () => {
+  const proto = SampleController.prototype;
+
+  async function denial(promise: Promise<boolean>): Promise<GrantedForbiddenException> {
+    try {
+      await promise;
+    } catch (e) {
+      return e as GrantedForbiddenException;
+    }
+    throw new Error('expected the guard to deny');
+  }
+
+  it('carries the failed spec and the identity it was evaluated against', async () => {
+    const g = guard({ roleHierarchy: { MANAGER: ['USER'] } });
+    const e = await denial(g.canActivate(ctx(proto.adminRoute, SampleController, { username: 'bob', roles: '["MANAGER"]', tenant: 'acme' })));
+    expect(e).toBeInstanceOf(ForbiddenException);
+    expect(e.deniedSpec).toBe('hasRole(ADMIN)');
+    expect(e.username).toBe('bob');
+    expect(e.roles).toEqual(['MANAGER', 'USER']); // resolved roles, not the raw header
+    expect(e.tenant).toBe('acme');
+  });
+
+  it('reports a composed spec whole', async () => {
+    class Composed {
+      @GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isUser('Param', 'userId'))))
+      route() {}
+    }
+    const e = await denial(guard().canActivate(ctx(Composed.prototype.route, Composed, { username: 'bob' })));
+    expect(e.deniedSpec).toBe('and(isAuthenticated(),or(hasRole(ADMIN),isUser(Param, userId)))');
+  });
+
+  it('keeps the response body NestJS sends for a guard returning false', async () => {
+    const e = await denial(guard().canActivate(ctx(proto.adminRoute, SampleController, {})));
+    expect(e.getStatus()).toBe(403);
+    expect(e.getResponse()).toEqual({ statusCode: 403, message: 'Forbidden resource', error: 'Forbidden' });
+  });
+});
+
+describe('AppGuard — 403 over HTTP', () => {
+  @Controller('admin')
+  @GrantedTo(isAuthenticated())
+  class AdminController {
+    @Get('config')
+    @GrantedTo(hasRole('ADMIN'))
+    config() {
+      return 'ok';
+    }
+  }
+
+  /** What a host app does to log denials in its own format. */
+  @Catch(GrantedForbiddenException)
+  class DenialFilter extends BaseExceptionFilter {
+    static caught: GrantedForbiddenException[] = [];
+    catch(exception: GrantedForbiddenException, host: ArgumentsHost) {
+      DenialFilter.caught.push(exception);
+      super.catch(exception, host);
+    }
+  }
+
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({ imports: [GrantedModule.forRoot()], controllers: [AdminController] }).compile();
+    app = moduleRef.createNestApplication();
+    app.useGlobalFilters(new DenialFilter(app.getHttpAdapter()));
+    await app.init();
+  });
+
+  afterAll(() => app.close());
+
+  it('answers a bare 403 and hands the details to the host filter', async () => {
+    const res = await request(app.getHttpServer()).get('/admin/config').set('username', 'bob').set('roles', '["USER"]');
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ statusCode: 403, message: 'Forbidden resource', error: 'Forbidden' });
+    expect(DenialFilter.caught).toHaveLength(1);
+    expect(DenialFilter.caught[0]).toMatchObject({ deniedSpec: 'hasRole(ADMIN)', username: 'bob', roles: ['USER'] });
+  });
+
+  it('lets a granted call through', async () => {
+    const res = await request(app.getHttpServer()).get('/admin/config').set('username', 'alice').set('roles', '["ADMIN"]');
+    expect(res.status).toBe(200);
   });
 });

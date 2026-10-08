@@ -115,6 +115,39 @@ export class AdminController {
 
 > There is no "opt-out": a method can't loosen a class-level spec (specs are AND-merged). Leave a controller un-annotated and secure routes individually if some must stay open.
 
+### Denied requests — `GrantedForbiddenException`
+
+When a spec fails, the guard throws a `GrantedForbiddenException` (a `ForbiddenException`). The caller gets the same bare `403` NestJS sends for any guard returning `false` — nothing about the policy leaks:
+
+```json
+{ "statusCode": 403, "message": "Forbidden resource", "error": "Forbidden" }
+```
+
+The details stay on the exception, for your app to log in its own format — the library logs nothing itself:
+
+| Property     | Content                                                                                         |
+|--------------|-------------------------------------------------------------------------------------------------|
+| `deniedSpec` | `id` of the first spec that failed, e.g. `hasRole(ADMIN)` — an `and(...)` / `or(...)` is reported whole |
+| `username`   | the caller's username                                                                           |
+| `roles`      | the caller's roles after hierarchy expansion and `knownRoles` filtering — what the specs saw    |
+| `tenant`     | the caller's tenant, if any                                                                     |
+
+```ts
+@Catch(GrantedForbiddenException)
+export class DenialFilter extends BaseExceptionFilter {
+  private readonly logger = new Logger('Access');
+  catch(e: GrantedForbiddenException, host: ArgumentsHost) {
+    this.logger.debug(`denied: user=${e.username} roles=[${e.roles}] spec=${e.deniedSpec}`);
+    super.catch(e, host); // unchanged 403 response
+  }
+}
+
+// main.ts
+app.useGlobalFilters(new DenialFilter(app.getHttpAdapter()));
+```
+
+> Don't put these details in the response: the required roles and the request fields an ownership check compares tell an attacker what to forge.
+
 ---
 
 ## Boolean specifications

@@ -30,8 +30,9 @@ import { CodeComponent } from '../code/code.component';
     </ul>
 
     <p>
-      On rejection the guard's <code>canActivate</code> returns <code>false</code>, which NestJS turns
-      into a <strong><code>403 Forbidden</code></strong>.
+      On rejection the guard throws a <code>GrantedForbiddenException</code> — a
+      <code>ForbiddenException</code>, so a <strong><code>403 Forbidden</code></strong>. See
+      <em>Denied requests</em> below.
     </p>
 
     <h3>Basic — role gate</h3>
@@ -111,6 +112,38 @@ export const ownerOrAdmin = (param: string) =&gt; or(hasRole('ADMIN'), isUser('P
     <app-code lang="ts">&#64;Delete('users/:userId')
 &#64;GrantedTo(ownerOrAdmin('userId'))
 remove() &#123; /* ... */ &#125;</app-code>
+
+    <h3>Denied requests — <code>GrantedForbiddenException</code></h3>
+    <p>
+      The caller gets the same bare <code>403</code> NestJS sends for any guard returning
+      <code>false</code> — nothing about the policy leaks:
+    </p>
+    <app-code lang="json">&#123; "statusCode": 403, "message": "Forbidden resource", "error": "Forbidden" &#125;</app-code>
+    <p>
+      The details stay on the exception, for your app to log in its own format — the library logs
+      nothing itself:
+    </p>
+    <ul>
+      <li><code>deniedSpec</code> — <code>id</code> of the first spec that failed, e.g. <code>hasRole(ADMIN)</code>; an <code>and(...)</code> / <code>or(...)</code> is reported whole.</li>
+      <li><code>username</code> — the caller's username.</li>
+      <li><code>roles</code> — the caller's roles after hierarchy expansion and <code>knownRoles</code> filtering: what the specs saw.</li>
+      <li><code>tenant</code> — the caller's tenant, if any.</li>
+    </ul>
+    <app-code lang="ts">&#64;Catch(GrantedForbiddenException)
+export class DenialFilter extends BaseExceptionFilter &#123;
+  private readonly logger = new Logger('Access');
+  catch(e: GrantedForbiddenException, host: ArgumentsHost) &#123;
+    this.logger.debug(\`denied: user=$&#123;e.username&#125; roles=[$&#123;e.roles&#125;] spec=$&#123;e.deniedSpec&#125;\`);
+    super.catch(e, host); // unchanged 403 response
+  &#125;
+&#125;
+
+// main.ts
+app.useGlobalFilters(new DenialFilter(app.getHttpAdapter()));</app-code>
+    <div class="callout warn">
+      Don't put these details in the response: the required roles and the request fields an ownership
+      check compares tell an attacker what to forge.
+    </div>
 
     <div class="callout">
       <strong>What the guard reads:</strong> <code>username</code>, <code>roles</code>, and — through

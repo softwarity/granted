@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { GrantedModuleOptions } from '../models/granted-module-options';
 import { BooleanSpec } from './boolean-spec';
+import { GrantedForbiddenException } from './granted-forbidden.exception';
 import { resolveRoles } from './roles.util';
 import { IGrantedPrincipalProvider } from '../services/igranted-info.provider';
 
@@ -31,6 +32,11 @@ export class AppGuard implements CanActivate {
     const roles: string[] = resolveRoles(rawRoles, this.options.roleHierarchy, this.options.knownRoles);
     const username = this.grantedPrincipalProvider.getUsernameFromRequest(request);
     const tenant = this.grantedPrincipalProvider.getTenantFromRequest(request);
-    return booleanSpecs.every((booleanSpec: BooleanSpec) => booleanSpec.apply(request, username, roles, tenant));
+    const denied = booleanSpecs.find((booleanSpec: BooleanSpec) => !booleanSpec.apply(request, username, roles, tenant));
+    if (denied) {
+      // Same 403 body as a guard returning `false`; the details stay server side.
+      throw new GrantedForbiddenException(denied.id, username, roles, tenant);
+    }
+    return true;
   }
 }

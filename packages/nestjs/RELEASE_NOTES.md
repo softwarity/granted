@@ -2,6 +2,19 @@
 
 ## NEXT RELEASE
 
+### New features
+
+- **Denials are diagnosable: the guard throws a `GrantedForbiddenException`.** Until now the guard returned `false` and a 403 said nothing about why — which spec failed, with which roles. It now throws `GrantedForbiddenException`, a `ForbiddenException` carrying `deniedSpec` (the `id` of the first spec that failed, e.g. `hasRole(ADMIN)`; an `and(...)` / `or(...)` is reported whole), `username`, `roles` (after hierarchy expansion and `knownRoles` filtering — what the specs saw) and `tenant`. The library logs nothing: the host app logs these in its own format from an exception filter (`@Catch(GrantedForbiddenException)`). The response body is unchanged — `{ "statusCode": 403, "message": "Forbidden resource", "error": "Forbidden" }` — so the caller learns nothing about the policy.
+
+### Changes
+
+- `AppGuard.canActivate` now throws on a denial instead of resolving to `false`. Only matters if you call the guard yourself; existing filters catching `ForbiddenException` still catch it.
+
+### Internal changes
+
+- `test/guard.spec.ts`: exception details, composed specs reported whole, response body unchanged, and an HTTP test (supertest) with a host filter receiving the details.
+- Docs (README and site): *Denied requests* section with a logging filter example.
+
 ---
 
 ## 5.2.0
