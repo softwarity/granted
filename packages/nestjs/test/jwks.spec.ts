@@ -1,6 +1,9 @@
 import { generateKeyPairSync, KeyObject, sign as signBytes } from 'crypto';
+import { mkdtempSync, writeFileSync } from 'fs';
 import { createServer } from 'http';
 import { AddressInfo } from 'net';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import * as jwt from 'jsonwebtoken';
 import { GrantedJwtPrincipalProvider, GrantedJwtPrincipalProviderConfig, JwtAlgorithm } from '../src/services/granted-info.jwt-provider';
 
@@ -58,12 +61,15 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
   let status: number;
   let fetches: number;
   let requested: string[];
+  /** The `Authorization` header of each request, by path. */
+  let authorizations: Record<string, string | undefined>;
   const server = createServer((req, res) => {
     if (req.url === '/hang') {
       return; // never answers — exercises jwksTimeout
     }
     fetches++;
     requested.push(req.url);
+    authorizations[req.url] = req.headers.authorization;
     const route = routes[req.url];
     res.writeHead(typeof route === 'number' ? route : status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(typeof route === 'object' ? route : { keys: published }));
@@ -94,6 +100,7 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
     status = 200;
     fetches = 0;
     requested = [];
+    authorizations = {};
     elapsed = 0;
     jest.spyOn(Date, 'now').mockImplementation(() => realNow() + elapsed);
     warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -472,6 +479,106 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
       expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
       expect(await usernameOf(p, sign(outsider, { sub: 'mallory', iss: issuerA }))).toBe('anonymous');
       expect(await usernameOf(p, sign(keyA, { sub: 'mallory', iss: 'https://gateway.acme' }))).toBe('anonymous');
+    });
+
+    describe('a provider that wants a bearer token', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'granted-'));
+      const tokenFile = join(dir, 'token');
+
+      beforeEach(() => writeFileSync(tokenFile, 'sa-token-1\n'));
+
+      function kubernetesLike(conf: GrantedJwtPrincipalProviderConfig = {}) {
+        return new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: `${baseUrl}/a`, bearerTokenFile: tokenFile }, `${baseUrl}/b`], ...conf });
+      }
+
+      it('sends the token to its document and to the jwks_uri it announces — never to another provider', async () => {
+        const p = kubernetesLike();
+        expect(await usernameOf(p, sign(keyA, { sub: 'system:serviceaccount:canopy:orders', iss: issuerA }))).toBe('system:serviceaccount:canopy:orders');
+        expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+        expect(authorizations['/a/.well-known/openid-configuration']).toBe('Bearer sa-token-1');
+        expect(authorizations['/a/certs']).toBe('Bearer sa-token-1');
+        expect(authorizations['/b/.well-known/openid-configuration']).toBeUndefined();
+        expect(authorizations['/b/certs']).toBeUndefined();
+      });
+
+      it('reads the file at every fetch, so a rotated token is picked up', async () => {
+        const p = kubernetesLike({ jwksCacheMaxAge: 60_000 });
+        expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+        writeFileSync(tokenFile, 'sa-token-2');
+        advance(61_000);
+        expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+        expect(authorizations['/a/.well-known/openid-configuration']).toBe('Bearer sa-token-2');
+      });
+
+      it('keeps serving the other providers when the token file is missing', async () => {
+        const p = new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: `${baseUrl}/a`, bearerTokenFile: join(dir, 'absent') }, `${baseUrl}/b`] });
+        expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('anonymous');
+        expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+        expect(warnings()).toContain('OpenID configuration fetch failed');
+        expect(requested).not.toContain('/a/.well-known/openid-configuration');
+      });
+
+      it('refuses an entry without a URL', () => {
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: '', bearerTokenFile: tokenFile }] })).toThrow('each discoveryUris entry needs a URL');
+      });
+    });
+
+    describe('bypass', () => {
+      const service = 'system:serviceaccount:canopy:orders';
+
+      function cluster(conf: GrantedJwtPrincipalProviderConfig = {}) {
+        return GrantedJwtPrincipalProvider.keycloak({ discoveryUris: [{ uri: `${baseUrl}/a`, bypass: ['system:serviceaccount:canopy:*'] }, `${baseUrl}/b`], ...conf });
+      }
+
+      async function bypassed(p: GrantedJwtPrincipalProvider, token: string): Promise<boolean> {
+        const req = reqWithToken(token);
+        await p.prepare(req);
+        return p.isBypassed(req);
+      }
+
+      it('flags a verified token of its provider whose sub matches, and names it by its sub', async () => {
+        const p = cluster();
+        expect(await bypassed(p, sign(keyA, { sub: service, iss: issuerA }))).toBe(true);
+        // The keycloak preset reads preferred_username, which a service account token lacks.
+        expect(await usernameOf(p, sign(keyA, { sub: service, iss: issuerA }))).toBe(service);
+      });
+
+      it('ignores a sub outside the patterns', async () => {
+        const p = cluster();
+        expect(await bypassed(p, sign(keyA, { sub: 'system:serviceaccount:monitoring:otel', iss: issuerA }))).toBe(false);
+        expect(await bypassed(p, sign(keyA, { sub: 'system:serviceaccount:canopy', iss: issuerA }))).toBe(false);
+      });
+
+      it('never flags the same sub from another provider', async () => {
+        expect(await bypassed(cluster(), sign(keyB, { sub: service, iss: issuerB }))).toBe(false);
+      });
+
+      it('never flags a token that fails verification', async () => {
+        const p = cluster();
+        expect(await bypassed(p, sign(outsider, { sub: service, iss: issuerA }))).toBe(false);
+        expect(await bypassed(p, sign(keyA, { sub: service, iss: issuerA, exp: Math.floor(Date.now() / 1000) - 60 }))).toBe(false);
+        expect(await bypassed(p, jwt.sign({ sub: service, iss: issuerA }, null, { algorithm: 'none' }))).toBe(false);
+      });
+
+      it('takes * as any run of characters, and the rest literally', async () => {
+        const p = new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: `${baseUrl}/a`, bypass: ['svc.a', 'job-*-runner'] }] });
+        expect(await bypassed(p, sign(keyA, { sub: 'svc.a', iss: issuerA }))).toBe(true);
+        expect(await bypassed(p, sign(keyA, { sub: 'svcXa', iss: issuerA }))).toBe(false);
+        expect(await bypassed(p, sign(keyA, { sub: 'job-nightly-runner', iss: issuerA }))).toBe(true);
+      });
+
+      it('refuses a bypass that is not a list of patterns', () => {
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: `${baseUrl}/a`, bypass: 'system:*' as any }] })).toThrow('bypass is a list of sub patterns');
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: `${baseUrl}/a`, bypass: [''] }] })).toThrow('bypass is a list of sub patterns');
+      });
+    });
+
+    it('checks the audience of an entry in place of the global one', async () => {
+      const p = openid({ audience: 'orders-api', discoveryUris: [{ uri: `${baseUrl}/a`, audience: 'internal' }, `${baseUrl}/b`] });
+      expect(await usernameOf(p, sign(keyA, { sub: 'svc', iss: issuerA, aud: 'internal' }))).toBe('svc');
+      expect(await usernameOf(p, sign(keyA, { sub: 'svc', iss: issuerA, aud: 'orders-api' }))).toBe('anonymous');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB, aud: 'orders-api' }))).toBe('bob');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB, aud: 'internal' }))).toBe('anonymous');
     });
 
     it('refuses an ambiguous configuration at construction', () => {

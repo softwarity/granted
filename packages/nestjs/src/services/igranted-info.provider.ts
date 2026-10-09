@@ -13,6 +13,12 @@ export interface IGrantedPrincipalProvider {
   getRolesFromRequest(request: Request): string[];
   getTenantFromRequest(request: Request): string | undefined;
 
+  /**
+   * Optional: true when the request's principal passes every `@GrantedTo`
+   * without its specs being evaluated — e.g. a trusted service.
+   */
+  isBypassed?(request: Request): boolean;
+
   getUsernameFromIncomingMessage(incomingMessage: IncomingMessage): string;
   getRolesFromIncomingMessage(incomingMessage: IncomingMessage): string[];
   getTenantFromIncomingMessage(incomingMessage: IncomingMessage): string | undefined;

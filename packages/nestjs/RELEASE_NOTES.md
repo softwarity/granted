@@ -2,6 +2,20 @@
 
 ## NEXT RELEASE
 
+### New features
+
+- **Service-to-service in Kubernetes: `bypass`.** A `discoveryUris` entry can now be an object, `{ uri, bearerTokenFile?, audience?, bypass? }`. A verified token from that IdP whose `sub` matches a `bypass` pattern (`*` = anything) passes every `@GrantedTo`. With `{ uri: 'https://kubernetes.default.svc', bearerTokenFile: '/var/run/secrets/kubernetes.io/serviceaccount/token', bypass: ['system:serviceaccount:canopy:*'] }`, the services of the `canopy` namespace call each other with their pod's service account token and get through, while users keep being checked as usual. A service account outside the patterns is checked like anyone: authenticated, without any role. `@Username()` gives the service account's `sub`, even with a preset reading another claim.
+- **`bearerTokenFile`: an IdP that wants a token to serve its keys.** The Kubernetes API server answers 403 to anonymous requests for its discovery document and JWKS. The file's content is sent as `Authorization: Bearer` to that IdP's document and to the `jwks_uri` it announces — never to another IdP — and re-read at every fetch, so a token rotated by the kubelet is picked up. A missing file fails that IdP alone, with a warning.
+- **HTTPS with a private CA is up to the host app.** For the Kubernetes API server, whose certificate the cluster CA signs: `NODE_EXTRA_CA_CERTS=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt`.
+- **An audience per IdP**: `{ uri, audience }` replaces the global `audience` for that IdP's tokens.
+- **`IGrantedPrincipalProvider.isBypassed?(request)`**: a custom provider can let a principal through every `@GrantedTo` too.
+
+### Internal changes
+
+- `granted-info.jwt-provider.ts`: `OpenIdProvider`, `JwtAudience`. Each source carries its issuer, audience and bypass; a payload is flagged as bypassing only once verified by its own source. `app.guard.ts` returns `true` before evaluating the specs when `isBypassed` says so.
+- `test/jwks.spec.ts`: the token reaches its IdP's document and keys only, a rotated file is re-read, a missing file fails that IdP alone; bypass on matching `sub` only, from its own IdP only, never on an unverified, expired or unsigned token; audience per entry. `test/guard.spec.ts`: a bypassing principal passes every spec.
+- Docs (README and site): the *GrantedJwtPrincipalProvider* section rewritten around use cases — a key file, a JWKS URL, several IdPs, the services of a cluster — with a single options table.
+
 ---
 
 ## 5.4.0

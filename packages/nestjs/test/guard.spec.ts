@@ -94,6 +94,23 @@ describe('AppGuard — provider prepare() hook', () => {
   });
 });
 
+describe('AppGuard — bypass', () => {
+  /** Flags the requests carrying a `service` header, as the JWT provider flags a bypassing token. */
+  class BypassProvider extends GrantedPrincipalProvider {
+    isBypassed = jest.fn((request: any) => request.headers.service === 'orders');
+  }
+
+  it('lets a bypassing principal through every spec, without roles', async () => {
+    const g = guard({ principalProvider: new BypassProvider() });
+    expect(await g.canActivate(ctx(SampleController.prototype.adminRoute, SampleController, { service: 'orders' }))).toBe(true);
+  });
+
+  it('evaluates the specs of everyone else', async () => {
+    const g = guard({ principalProvider: new BypassProvider() });
+    await expect(g.canActivate(ctx(SampleController.prototype.adminRoute, SampleController, { service: 'billing' }))).rejects.toBeInstanceOf(GrantedForbiddenException);
+  });
+});
+
 describe('AppGuard — GrantedForbiddenException', () => {
   const proto = SampleController.prototype;
 

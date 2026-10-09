@@ -32,6 +32,7 @@ findOrders(@Username() me: string, @Roles() roles: string[]) { /* ... */ }
 - 🔑 **JWT verification** with **IdP presets** — RFC 9068/SCIM, Azure AD/Entra, Keycloak, Okta — or a fully custom claim mapping
 - 🔄 **JWKS key rotation** — verification keys fetched from the IdP's JWKS endpoint, cached, and re-fetched when it rotates them; each key verifies with its own algorithm (RSA, ECDSA, EdDSA), nothing to configure
 - 🌐 **Several IdPs via OpenID discovery** — list their `/.well-known/openid-configuration` URLs: each token is verified with the keys of its own issuer
+- 🤝 **Service-to-service in Kubernetes** — the services of your namespace call each other with their pod's token and pass every check (`bypass`)
 - 🏢 **Multi-tenant aware** — `@Tenant()` injection plus `isTenant` to block cross-tenant access
 - 🪶 **Tiny & dependency-light** — just `jsonwebtoken`; works on NestJS 10, 11 & 12
 
@@ -267,27 +268,93 @@ GrantedModule.forRoot({
 
 ### `GrantedJwtPrincipalProvider` — from a verified JWT
 
-Reads the `Authorization: Bearer <token>` header, verifies the token with your public key (a PEM, or the IdP's [JWKS endpoint](#keys-from-a-jwks-endpoint--automatic-rotation)), and maps the claims to `username` / `roles` / `tenant`. Claim names are configurable (dotted paths supported for nested claims), with presets for common IdPs:
+Reads `Authorization: Bearer <token>`, verifies the token and maps its claims to `username` / `roles` / `tenant`. A missing or invalid token gives an **anonymous** request: your `@GrantedTo` specs decide what it may reach.
+
+Pick the case that matches your setup:
+
+| Your setup | Use |
+|---|---|
+| The IdP gave you a public key file | [`pemFile`](#a-public-key-file) |
+| The IdP publishes a JWKS URL | [`jwksUri`](#a-jwks-url) |
+| One or several IdPs, each with a `/.well-known/openid-configuration` | [`discoveryUris`](#one-or-several-idps-by-their-discovery-url) |
+| The other services of your cluster must get through | [`discoveryUris` + `bypass`](#let-the-services-of-your-cluster-through) |
+
+#### A public key file
 
 ```ts
-import { GrantedModule, GrantedJwtPrincipalProvider } from '@softwarity/nestjs-granted';
-
-@Module({
-  imports: [
-    GrantedModule.forRoot({
-      apply: true,
-      // Preset — you only provide the key material:
-      principalProvider: GrantedJwtPrincipalProvider.keycloak({
-        algorithm: 'RS256',
-        pemFile: 'config/jwt_public_key.pem',
-      }),
-    }),
-  ],
-})
-export class AppModule {}
+GrantedModule.forRoot({
+  apply: true,
+  principalProvider: GrantedJwtPrincipalProvider.keycloak({
+    pemFile: 'config/jwt_public_key.pem', // or base64Key: '-----BEGIN PUBLIC KEY-----…'
+    algorithm: 'RS256',                   // default 'ES256'
+  }),
+});
 ```
 
-#### Presets
+#### A JWKS URL
+
+```ts
+GrantedJwtPrincipalProvider.keycloak({
+  jwksUri: 'https://sso.example.com/realms/acme/protocol/openid-connect/certs',
+});
+```
+
+No algorithm to set, and nothing to redeploy when the IdP rotates its keys.
+
+#### One or several IdPs, by their discovery URL
+
+```ts
+new GrantedJwtPrincipalProvider({
+  discoveryUris: [
+    'https://sso.example.com/realms/acme', // '/.well-known/openid-configuration' is appended
+    'http://partner-idp.iam:8080/.well-known/openid-configuration',
+  ],
+});
+```
+
+Each token is checked with the keys of the IdP that issued it (its `iss`). A token from an IdP that isn't listed is anonymous. An internal URL is fine: the issuer is read from the document, not from the URL.
+
+#### Let the services of your cluster through
+
+Service A calls service B with its pod's service account token. B lets the services of its namespace through, whatever the `@GrantedTo`, and keeps checking users as usual:
+
+```ts
+new GrantedJwtPrincipalProvider({
+  discoveryUris: [
+    {
+      uri: 'https://kubernetes.default.svc', // the cluster's API server signs the service account tokens
+      bearerTokenFile: '/var/run/secrets/kubernetes.io/serviceaccount/token', // it serves its keys to an authenticated caller only
+      bypass: ['system:serviceaccount:canopy:*'],
+    },
+    'https://sso.example.com/realms/acme', // users
+  ],
+});
+```
+
+| Caller | Result on B |
+|---|---|
+| A user, through the IdP | `@GrantedTo` checked as usual |
+| A service account of `canopy` | passes every `@GrantedTo` — `@Username()` is `system:serviceaccount:canopy:orders` |
+| Any other service account (another namespace, a third-party component) | checked as usual: authenticated, but without any role |
+
+On B's pod, trust the cluster CA, which signs the API server certificate:
+
+```yaml
+env:
+  - name: NODE_EXTRA_CA_CERTS
+    value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+```
+
+On A, send the pod's token — read it at each call, the kubelet rotates it:
+
+```ts
+const token = readFileSync('/var/run/secrets/kubernetes.io/serviceaccount/token', 'utf8').trim();
+await fetch('http://billing/api/invoices', { headers: { authorization: `Bearer ${token}` } });
+```
+
+> Keep `bypass` to your own namespace: every pod of the cluster carries a token signed by the same API server. Outside a cluster the token file is missing: that entry logs a warning and its tokens stay anonymous; the other IdPs keep working.
+
+#### Claims → identity
 
 | Factory | username | roles | tenant |
 |---|---|---|---|
@@ -295,103 +362,47 @@ export class AppModule {}
 | `GrantedJwtPrincipalProvider.azureAd(...)` | `preferred_username` | `roles` | `tid` |
 | `GrantedJwtPrincipalProvider.keycloak(...)` | `preferred_username` | `realm_access.roles` | `tenant` |
 | `GrantedJwtPrincipalProvider.okta(...)` | `sub` | `groups` | `tenant` |
+| `new GrantedJwtPrincipalProvider(...)` | `usernameClaim` (`sub`) | `rolesClaim` (`roles`) | `tenantClaim` (`tenant`) |
 
-Every field is overridable, e.g. `GrantedJwtPrincipalProvider.okta({ pemFile, usernameClaim: 'email' })`.
+Every claim is overridable, dotted paths included: `GrantedJwtPrincipalProvider.okta({ jwksUri, usernameClaim: 'email' })`, `rolesClaim: 'realm_access.roles'`.
 
-#### Keys from a JWKS endpoint — automatic rotation
+#### Refuse tokens issued for another API
 
-Rather than a static PEM, point the provider at the JWK Set your IdP publishes — its `jwks_uri`, listed in `<issuer>/.well-known/openid-configuration` (often `/.well-known/jwks.json`). When the IdP rotates its signing key, the provider picks up the new one by itself: no restart, no PEM to redeploy.
-
-```ts
-GrantedJwtPrincipalProvider.keycloak({
-  jwksUri: 'https://sso.example.com/realms/acme/protocol/openid-connect/certs',
-});
-```
-
-Keys are fetched on first use and cached. When a token fails verification — typically because it is signed by a key rotated in after the last fetch — the set is re-fetched once and the token verified again. The key is picked by the token's `kid` header (every key is tried when it has none). Only public signature keys are used: symmetric keys and `"use": "enc"` keys in the set are ignored.
-
-**The JWKS is enough — no algorithm to configure.** Each key verifies with the algorithm the set declares for it (its `alg`): RS256 / RS384 / RS512, PS256 / PS384 / PS512, ES256 / ES384 / ES512 or EdDSA. A set can mix them, and the IdP can move from one to another without any change here: the algorithm is chosen on the issuer side only. A key published without `alg` gets the one its type implies — RS256 for an RSA key, ES256 / ES384 / ES512 for an EC key on P-256 / P-384 / P-521, EdDSA for an Ed25519 key.
-
-The algorithm never comes from the token: a token whose `alg` header differs from its key's algorithm is rejected, which rules out `alg: none` and RSA/HMAC confusion attacks.
-
-To narrow what is accepted, set `algorithm` to one algorithm or a list — it is then an allowlist, and a token signed with anything else is rejected:
+The provider checks the signature and the expiry. Behind a gateway that already checks the rest, that's enough. Reachable without the gateway, or sharing an IdP with other apps? Check the audience, and the issuer with a key or a JWKS URL:
 
 ```ts
 GrantedJwtPrincipalProvider.keycloak({
   jwksUri: 'https://sso.example.com/realms/acme/protocol/openid-connect/certs',
-  algorithm: ['ES256', 'EdDSA'], // optional
+  issuer: 'https://sso.example.com/realms/acme',
+  audience: 'orders-api', // a string, a RegExp, or a list
 });
 ```
 
-For a key published without `alg`, the allowlist also settles which algorithm it verifies with — set `algorithm: 'PS256'` for an IdP that signs PS256 with such keys. `none` and the HS* algorithms are refused at construction.
+With `discoveryUris`, the issuer comes from each document, and an entry can have its own audience: `{ uri, audience: 'internal' }`.
 
-| Option | Default | Purpose |
+#### Options
+
+| Option | Default | |
 |---|---|---|
-| `jwksUri` | — | JWK Set URL. Can't be combined with `base64Key` / `pemFile`. |
-| `discoveryUris` | — | OpenID discovery document URLs — see [below](#several-identity-providers--openid-discovery). |
-| `algorithm` | — (each key's own) | Optional allowlist: one algorithm or an array. |
-| `jwksCacheMaxAge` | `600000` (10 min) | Keys older than this are re-fetched, so a key the IdP withdrew stops being accepted. |
-| `jwksCooldown` | `30000` (30 s) | Minimum delay between two fetches, so tokens with forged `kid`s can't make the provider hammer the IdP. |
-| `jwksTimeout` | `5000` (5 s) | Timeout of a fetch. |
+| `pemFile` / `base64Key` | — | Public key, as a file or inline PEM. |
+| `algorithm` | `'ES256'` with a key; each key's own with a JWKS | With a JWKS, an optional allowlist: `['ES256', 'EdDSA']`. |
+| `jwksUri` | — | JWKS URL. Alongside `discoveryUris`, needs `issuer`. |
+| `discoveryUris` | — | IdP URLs, or `{ uri, bearerTokenFile?, audience?, bypass? }`. |
+| ↳ `bearerTokenFile` | — | Token sent to this IdP only, when it wants one (the Kubernetes API server does). Re-read at each fetch. |
+| ↳ `audience` | `audience` | Accepted `aud` for this IdP's tokens. |
+| ↳ `bypass` | — | `sub` patterns (`*` = anything) whose tokens from this IdP pass every `@GrantedTo`. |
+| `issuer` | not checked | Accepted `iss`, with `pemFile` / `base64Key` / `jwksUri`. |
+| `audience` | not checked | Accepted `aud`. |
+| `usernameClaim` / `rolesClaim` / `tenantClaim` | see presets | Claim paths. |
+| `jwksCacheMaxAge` | 10 min | Keys and documents older than this are re-fetched. |
+| `jwksCooldown` | 30 s | At most one fetch per IdP in this delay. |
+| `jwksTimeout` | 5 s | Timeout of a fetch. |
 
-> If a fetch fails (IdP down, timeout…), the last known keys are kept and a warning is logged; the next attempt waits for the cooldown. Serve the JWKS over HTTPS: whoever controls that response decides which tokens are valid.
-
-#### Several identity providers — OpenID discovery
-
-To trust several IdPs, list their OpenID discovery documents in `discoveryUris`. Each document (`/.well-known/openid-configuration`) gives the IdP's `issuer` and `jwks_uri`: nothing else to configure.
-
-```ts
-new GrantedJwtPrincipalProvider({
-  discoveryUris: [
-    'http://idp-a.iam:8080/.well-known/openid-configuration',
-    'http://idp-b.iam:8080', // '/.well-known/openid-configuration' is appended
-  ],
-});
-```
-
-A token is verified only with the keys of the IdP whose `issuer` is its `iss` claim: a key of one IdP never validates a token claiming another, and a token whose `iss` no document announces is rejected — no URL is ever taken from the token. The issuer is the one the document announces, whatever the URL it was fetched from: an IdP reached through an in-cluster address keeps its public issuer.
-
-Documents are fetched on first use and cached like the keys — same `jwksCacheMaxAge`, `jwksCooldown` and `jwksTimeout`. When a re-fetched document points to a new `jwks_uri`, the keys are fetched from there. An IdP whose document can't be fetched doesn't affect the others: its tokens are anonymous until a retry, after the cooldown, succeeds.
-
-`discoveryUris` can be combined with `jwksUri`, for an issuer that publishes no discovery document. `issuer` is then required — it tells which tokens go to `jwksUri`'s keys — and applies to `jwksUri` only. `audience`, when set, is checked whatever the IdP.
-
-```ts
-new GrantedJwtPrincipalProvider({
-  discoveryUris: ['http://idp-a.iam:8080'],
-  jwksUri: 'http://legacy-auth:8080/jwks.json',
-  issuer: 'https://legacy.example.com',
-});
-```
-
-#### Issuer and audience — optional
-
-By default the provider checks the signature and the token's validity dates (`exp`, `nbf`), not who issued the token nor whom it is for — the gateway in front of the service usually does that. To check them here too, set `issuer` and/or `audience`; a token that doesn't match is treated as anonymous:
-
-```ts
-GrantedJwtPrincipalProvider.keycloak({
-  jwksUri: 'https://sso.example.com/realms/acme/protocol/openid-connect/certs',
-  issuer: 'https://sso.example.com/realms/acme', // or an array of accepted issuers
-  audience: 'orders-api',                         // a string, a RegExp, or an array of them
-});
-```
-
-Worth it when the service can be reached without going through the gateway, or when the IdP signs other apps' tokens with the same keys — Microsoft Entra ID uses the same signing keys for every tenant. Both options need a key (`base64Key`, `pemFile`, `jwksUri` or `discoveryUris`): an unverified token could claim any issuer. With `discoveryUris`, each IdP's issuer comes from its discovery document — see above.
-
-#### Custom claim mapping
-
-```ts
-new GrantedJwtPrincipalProvider({
-  algorithm: 'RS256',                // with a PEM key — default 'ES256'
-  pemFile: 'config/jwt_public_key.pem',
-  // or base64Key: '-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----',
-  // or jwksUri: 'https://idp.example.com/.well-known/jwks.json' — no algorithm needed
-  usernameClaim: 'sub',              // default 'sub'
-  rolesClaim: 'realm_access.roles',  // default 'roles' — dotted paths supported
-  tenantClaim: 'tid',                // default 'tenant'
-});
-```
-
-> A token that is missing, malformed, or fails verification yields an **anonymous** request — it's then up to your specs (e.g. `isAuthenticated()`) to reject it. The provider never logs the token or the key material.
+Good to know:
+- A token signed by a key the provider doesn't know yet triggers one re-fetch: a key rotation needs no restart.
+- If an IdP is down, the last known keys are kept and a warning is logged.
+- The algorithm comes from the key, never from the token: `alg: none` and RSA/HMAC confusion are rejected.
+- The token and the key material are never logged.
 
 ### Custom provider
 

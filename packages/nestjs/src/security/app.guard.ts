@@ -28,6 +28,9 @@ export class AppGuard implements CanActivate {
     if (!this.options.apply || !booleanSpecs || booleanSpecs.length === 0) {
       return true;
     }
+    if (this.grantedPrincipalProvider.isBypassed?.(request)) {
+      return true;
+    }
     const rawRoles: string[] = this.grantedPrincipalProvider.getRolesFromRequest(request);
     const roles: string[] = resolveRoles(rawRoles, this.options.roleHierarchy, this.options.knownRoles);
     const username = this.grantedPrincipalProvider.getUsernameFromRequest(request);

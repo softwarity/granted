@@ -8,6 +8,30 @@ import { IGrantedPrincipalProvider } from './igranted-info.provider';
 /** `jsonwebtoken`'s algorithms, plus EdDSA — only with `jwksUri`, where Node's `crypto` verifies it. */
 export type JwtAlgorithm = Algorithm | 'EdDSA';
 
+/** Accepted `aud` value(s), as strings or patterns. */
+export type JwtAudience = string | RegExp | (string | RegExp)[];
+
+/** A `discoveryUris` entry with options: a bearer token to fetch with, its own audience, a bypass. */
+export interface OpenIdProvider {
+  /** The discovery document URL, or the URL it lives under — as a plain `discoveryUris` entry. */
+  uri: string;
+  /**
+   * File holding the token sent as `Authorization: Bearer` to this provider's
+   * discovery document and to the `jwks_uri` it announces — never to another
+   * provider. Read at every fetch, so a rotated token is picked up. The
+   * Kubernetes API server answers 403 without one.
+   */
+  bearerTokenFile?: string;
+  /** Accepted `aud` of this provider's tokens, in place of the global `audience`. */
+  audience?: JwtAudience;
+  /**
+   * `sub` patterns (`*` matches anything) whose tokens, from this provider,
+   * pass every `@GrantedTo` — e.g. `'system:serviceaccount:canopy:*'` for the
+   * services of a namespace. Only this provider's tokens can match.
+   */
+  bypass?: string[];
+}
+
 /** Key material, signature algorithm and expected issuer / audience — what a preset can't infer. */
 export interface JwtKeyConfig {
   /** Public key (PEM) used to verify the token signature. */
@@ -33,8 +57,12 @@ export interface JwtKeyConfig {
    * the URL it was fetched from — an IdP reached through an in-cluster address
    * keeps its public issuer. Can be combined with `jwksUri`, which then needs
    * `issuer` so tokens can be routed to it; not with `base64Key` / `pemFile`.
+   *
+   * An entry can also be an {@link OpenIdProvider}: a provider that wants a
+   * bearer token (e.g. the Kubernetes API server), has its own audience, or
+   * whose tokens bypass the `@GrantedTo` checks.
    */
-  discoveryUris?: string[];
+  discoveryUris?: (string | OpenIdProvider)[];
   /**
    * Age (ms) after which cached JWKS keys — and OpenID discovery documents — are
    * re-fetched. Defaults to 10 minutes.
@@ -69,7 +97,7 @@ export interface JwtKeyConfig {
    * Accepted `aud` value(s), as strings or patterns. Not checked when unset.
    * Needs a key (`base64Key`, `pemFile`, `jwksUri` or `discoveryUris`).
    */
-  audience?: string | RegExp | (string | RegExp)[];
+  audience?: JwtAudience;
 }
 
 /**
@@ -141,8 +169,20 @@ function openidConfigurationUrl(uri: string): string {
   return uri.endsWith(OPENID_CONFIGURATION) ? uri : `${uri.replace(/\/+$/, '')}${OPENID_CONFIGURATION}`;
 }
 
-async function fetchJson(url: string, timeout: number): Promise<any> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(timeout) });
+/** `*` matches any run of characters; everything else is literal. */
+function subjectPattern(pattern: string): RegExp {
+  return new RegExp(
+    `^${pattern
+      .split('*')
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('.*')}$`,
+  );
+}
+
+async function fetchJson(url: string, timeout: number, bearerTokenFile?: string): Promise<any> {
+  // Read at every fetch: a projected token is rotated on disk by the kubelet.
+  const headers = bearerTokenFile ? { authorization: `Bearer ${fs.readFileSync(bearerTokenFile, 'utf8').trim()}` } : undefined;
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(timeout) });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
   }
@@ -215,21 +255,31 @@ class Fetched<T> {
   }
 }
 
-/** A JWK Set, and the issuer its keys vouch for. */
-class JwksSource {
+/** The issuer and audience a verified token must carry. Unset: not checked. */
+interface ExpectedClaims {
+  issuer?: string | string[];
+  audience?: JwtAudience;
+}
+
+/** A JWK Set, the issuer its keys vouch for, and the audience and bypass that apply to their tokens. */
+class JwksSource implements ExpectedClaims {
   readonly keys: Fetched<JwksKey[]>;
+  /** `sub` patterns whose tokens pass every `@GrantedTo`. */
+  bypass: RegExp[] = [];
 
   /** An undefined `issuer` routes every token here: a lone `jwksUri` configured without `issuer`. */
   constructor(
     public jwksUri: string | undefined,
     public issuer: string | string[] | undefined,
+    readonly audience: JwtAudience | undefined,
     policy: FetchPolicy,
     parseKeys: (jwks: any) => JwksKey[],
+    bearerTokenFile?: string,
   ) {
     this.keys = new Fetched<JwksKey[]>(
       [],
       policy,
-      async () => parseKeys(await fetchJson(this.jwksUri, policy.timeout)),
+      async () => parseKeys(await fetchJson(this.jwksUri, policy.timeout, bearerTokenFile)),
       () => `JWKS fetch failed (${this.jwksUri})`,
     );
   }
@@ -246,13 +296,15 @@ class JwksSource {
 class DiscoverySource extends JwksSource {
   private readonly configuration: Fetched<{ issuer: string; jwksUri: string } | undefined>;
 
-  constructor(discoveryUri: string, policy: FetchPolicy, parseKeys: (jwks: any) => JwksKey[]) {
-    super(undefined, undefined, policy, parseKeys);
+  constructor({ uri, bearerTokenFile, audience, bypass }: OpenIdProvider, defaultAudience: JwtAudience | undefined, policy: FetchPolicy, parseKeys: (jwks: any) => JwksKey[]) {
+    super(undefined, undefined, audience ?? defaultAudience, policy, parseKeys, bearerTokenFile);
+    this.bypass = (bypass ?? []).map(subjectPattern);
+    const discoveryUri = openidConfigurationUrl(uri);
     this.configuration = new Fetched(
       undefined,
       policy,
       async () => {
-        const { issuer, jwks_uri: jwksUri } = (await fetchJson(discoveryUri, policy.timeout)) ?? {};
+        const { issuer, jwks_uri: jwksUri } = (await fetchJson(discoveryUri, policy.timeout, bearerTokenFile)) ?? {};
         if (typeof issuer !== 'string' || !issuer || typeof jwksUri !== 'string' || !jwksUri) {
           throw new Error('no "issuer" or "jwks_uri" in the response');
         }
@@ -292,18 +344,18 @@ class DiscoverySource extends JwksSource {
  *
  * A token that is missing, malformed, or fails verification yields an
  * anonymous request (empty claims) — it is then up to the `@GrantedTo` specs
- * to reject it.
+ * to reject it. A token whose `sub` matches its provider's `bypass` passes them all.
  */
 export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
   base64Key: string;
   jwksUri: string;
-  discoveryUris: string[];
+  discoveryUris: (string | OpenIdProvider)[];
   jwksCacheMaxAge: number;
   jwksCooldown: number;
   jwksTimeout: number;
   algorithm: JwtAlgorithm | JwtAlgorithm[];
   issuer: string | string[];
-  audience: string | RegExp | (string | RegExp)[];
+  audience: JwtAudience;
   usernameClaim: string;
   rolesClaim: string;
   tenantClaim: string;
@@ -312,9 +364,18 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
   private algorithms: JwtAlgorithm[] | undefined;
   /** The JWK Sets to verify with: `jwksUri`'s, then one per `discoveryUris` entry. Empty with a PEM key. */
   private readonly sources: JwksSource[];
+  /** Verified payloads whose `sub` matches their provider's `bypass` — set by the provider only, never by a claim. */
+  private readonly bypassed = new WeakSet<object>();
 
   constructor(conf: GrantedJwtPrincipalProviderConfig) {
     const discoveryUris = conf.discoveryUris ?? [];
+    const providers: OpenIdProvider[] = discoveryUris.map((entry) => (typeof entry === 'string' ? { uri: entry } : entry));
+    if (providers.some(({ uri }) => typeof uri !== 'string' || !uri)) {
+      throw new Error('[nestjs-granted] each discoveryUris entry needs a URL');
+    }
+    if (providers.some(({ bypass }) => bypass && (!Array.isArray(bypass) || bypass.some((pattern) => typeof pattern !== 'string' || !pattern)))) {
+      throw new Error("[nestjs-granted] bypass is a list of sub patterns, e.g. ['system:serviceaccount:canopy:*']");
+    }
     const jwks = Boolean(conf.jwksUri || discoveryUris.length);
     if (conf.jwksUri && (conf.base64Key || conf.pemFile)) {
       throw new Error('[nestjs-granted] jwksUri cannot be combined with base64Key or pemFile');
@@ -364,7 +425,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
     }
     const policy: FetchPolicy = { maxAge: this.jwksCacheMaxAge, cooldown: this.jwksCooldown, timeout: this.jwksTimeout };
     const parseKeys = (jwks: any) => this.parseJwks(jwks);
-    this.sources = [...(conf.jwksUri ? [new JwksSource(conf.jwksUri, conf.issuer, policy, parseKeys)] : []), ...discoveryUris.map((uri) => new DiscoverySource(openidConfigurationUrl(uri), policy, parseKeys))];
+    this.sources = [...(conf.jwksUri ? [new JwksSource(conf.jwksUri, conf.issuer, conf.audience, policy, parseKeys)] : []), ...providers.map((provider) => new DiscoverySource(provider, conf.audience, policy, parseKeys))];
   }
 
   /** Preset for RFC 9068 / SCIM access tokens. */
@@ -400,7 +461,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
   }
 
   getUsernameFromRequest(request: Request): string {
-    return this.resolveClaim(this.initFromRequest(request), this.usernameClaim) || 'anonymous';
+    return this.username(this.initFromRequest(request));
   }
 
   getRolesFromRequest(request: Request): string[] {
@@ -412,7 +473,16 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
   }
 
   getUsernameFromIncomingMessage(incomingMessage: IncomingMessage): string {
-    return this.resolveClaim(this.initFromIncomingMessage(incomingMessage), this.usernameClaim) || 'anonymous';
+    return this.username(this.initFromIncomingMessage(incomingMessage));
+  }
+
+  isBypassed(request: Request): boolean {
+    return this.bypassed.has(this.initFromRequest(request));
+  }
+
+  /** A bypassing token may lack the username claim (a service account has no `preferred_username`): its `sub` names it. */
+  private username(payload: any): string {
+    return this.resolveClaim(payload, this.usernameClaim) || (this.bypassed.has(payload) ? payload.sub : undefined) || 'anonymous';
   }
 
   getRolesFromIncomingMessage(incomingMessage: IncomingMessage): string[] {
@@ -475,7 +545,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
       return decode(token);
     }
     try {
-      return verify(token, this.base64Key, this.verifyOptions(this.algorithms, this.issuer));
+      return verify(token, this.base64Key, this.verifyOptions(this.algorithms, this));
     } catch (err) {
       return this.verificationFailed(err);
     }
@@ -485,8 +555,16 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
    * `jsonwebtoken` skips an unset `issuer` / `audience`. The cast is for the
    * arrays: its types want non-empty tuples, a plain `string[]` is friendlier.
    */
-  private verifyOptions(algorithms: JwtAlgorithm[], issuer: string | string[]): VerifyOptions {
-    return { algorithms, issuer, audience: this.audience } as VerifyOptions;
+  private verifyOptions(algorithms: JwtAlgorithm[], { issuer, audience }: ExpectedClaims): VerifyOptions {
+    return { algorithms, issuer, audience } as VerifyOptions;
+  }
+
+  /** The payload a source verified, remembered as bypassing when its `sub` matches the source's `bypass`. */
+  private verifiedBy(source: JwksSource, payload: any): any {
+    if (typeof payload?.sub === 'string' && source.bypass.some((pattern) => pattern.test(payload.sub))) {
+      this.bypassed.add(payload);
+    }
+    return payload;
   }
 
   /** The sources whose issuer is the token's `iss`: a key never verifies a token claiming another issuer. */
@@ -517,13 +595,13 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
     for (const source of this.sourcesFor(jwt)) {
       const cached = await source.keys.get(false);
       try {
-        return this.verifyWithKeys(token, jwt, cached, source.issuer);
+        return this.verifiedBy(source, this.verifyWithKeys(token, jwt, cached, source));
       } catch (err) {
         failure = err;
         const refreshed = signatureMatched(err) ? cached : await source.keys.get(true);
         if (refreshed !== cached) {
           try {
-            return this.verifyWithKeys(token, jwt, refreshed, source.issuer);
+            return this.verifiedBy(source, this.verifyWithKeys(token, jwt, refreshed, source));
           } catch (retryErr) {
             failure = retryErr;
           }
@@ -540,7 +618,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
     let failure: unknown = this.unknownIssuer();
     for (const source of this.sourcesFor(jwt)) {
       try {
-        return this.verifyWithKeys(token, jwt, source.keys.value, source.issuer);
+        return this.verifiedBy(source, this.verifyWithKeys(token, jwt, source.keys.value, source));
       } catch (err) {
         failure = err;
       }
@@ -554,7 +632,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
    * with it. Taking it from the token is what `alg: none` and RS/HS confusion
    * attacks rely on.
    */
-  private verifyWithKeys(token: string, jwt: Jwt, keys: JwksKey[], issuer: string | string[]): any {
+  private verifyWithKeys(token: string, jwt: Jwt, keys: JwksKey[], expected: ExpectedClaims): any {
     const { kid, alg } = jwt.header;
     const candidates = kid ? keys.filter((jwk) => jwk.kid === kid) : keys;
     let failure: unknown = new JsonWebTokenError('no JWKS key matches the token');
@@ -563,7 +641,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
         if (!algorithms.includes(alg as JwtAlgorithm)) {
           throw new JsonWebTokenError('invalid algorithm');
         }
-        return alg === 'EdDSA' ? this.verifyEdDsa(token, jwt, key, issuer) : verify(token, key, this.verifyOptions(algorithms, issuer));
+        return alg === 'EdDSA' ? this.verifyEdDsa(token, jwt, key, expected) : verify(token, key, this.verifyOptions(algorithms, expected));
       } catch (err) {
         if (signatureMatched(err)) {
           throw err;
@@ -575,7 +653,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
   }
 
   /** `jsonwebtoken` has no EdDSA: `crypto` checks the signature, then the claims are checked the way `jsonwebtoken` does. */
-  private verifyEdDsa(token: string, jwt: Jwt, key: KeyObject, issuer: string | string[]): JwtPayload {
+  private verifyEdDsa(token: string, jwt: Jwt, key: KeyObject, { issuer, audience }: ExpectedClaims): JwtPayload {
     const signed = token.slice(0, token.lastIndexOf('.'));
     if (!verifySignature(null, Buffer.from(signed), key, Buffer.from(jwt.signature, 'base64url'))) {
       throw new JsonWebTokenError('invalid signature');
@@ -601,8 +679,8 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
         throw new TokenExpiredError('jwt expired', new Date(payload.exp * 1000));
       }
     }
-    if (this.audience) {
-      const accepted = [this.audience].flat();
+    if (audience) {
+      const accepted = [audience].flat();
       if (![payload.aud].flat().some((aud) => accepted.some((candidate) => (candidate instanceof RegExp ? candidate.test(aud) : candidate === aud)))) {
         throw new JsonWebTokenError(`jwt audience invalid. expected: ${accepted.join(' or ')}`);
       }
