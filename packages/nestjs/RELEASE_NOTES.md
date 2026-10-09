@@ -2,6 +2,10 @@
 
 ## NEXT RELEASE
 
+---
+
+## 5.4.0
+
 ### New features
 
 - **Several identity providers, through OpenID discovery: `discoveryUris`.** List the IdPs' discovery documents — `discoveryUris: ['http://idp-a:8080/.well-known/openid-configuration', …]`, or the URL they live under, `/.well-known/openid-configuration` being appended. Each document gives its IdP's `issuer` and `jwks_uri`: nothing else to configure. A token is verified only with the keys of the IdP whose `issuer` is its `iss` — a key of one IdP never validates a token claiming another, and a token whose `iss` no document announces is rejected without any key fetch; no URL is ever taken from the token. The issuer is the document's, whatever the URL it was fetched from, so an IdP reached through an in-cluster address keeps its public issuer. Documents are fetched on first use and cached like the keys (`jwksCacheMaxAge`, `jwksCooldown`, `jwksTimeout`); a re-fetched document pointing to a new `jwks_uri` is followed; an IdP whose document can't be fetched doesn't affect the others.
