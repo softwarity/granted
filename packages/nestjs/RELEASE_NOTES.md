@@ -2,6 +2,10 @@
 
 ## NEXT RELEASE
 
+---
+
+## 5.5.0
+
 ### New features
 
 - **Service-to-service in Kubernetes: `bypass`.** A `discoveryUris` entry can now be an object, `{ uri, bearerTokenFile?, audience?, bypass? }`. A verified token from that IdP whose `sub` matches a `bypass` pattern (`*` = anything) passes every `@GrantedTo`. With `{ uri: 'https://kubernetes.default.svc', bearerTokenFile: '/var/run/secrets/kubernetes.io/serviceaccount/token', bypass: ['system:serviceaccount:canopy:*'] }`, the services of the `canopy` namespace call each other with their pod's service account token and get through, while users keep being checked as usual. A service account outside the patterns is checked like anyone: authenticated, without any role. `@Username()` gives the service account's `sub`, even with a preset reading another claim.
