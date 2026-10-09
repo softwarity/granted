@@ -89,7 +89,7 @@ import { CodeComponent } from '../code/code.component';
     &#123;
       uri: 'https://kubernetes.default.svc', // the cluster's API server signs the service account tokens
       bearerTokenFile: '/var/run/secrets/kubernetes.io/serviceaccount/token', // it serves its keys to an authenticated caller only
-      bypass: ['system:serviceaccount:canopy:*'],
+      bypass: ['system:serviceaccount:my-namespace:*'],
     &#125;,
     'https://sso.example.com/realms/acme', // users
   ],
@@ -98,7 +98,7 @@ import { CodeComponent } from '../code/code.component';
       <thead><tr><th>Caller</th><th>Result on B</th></tr></thead>
       <tbody>
         <tr><td>A user, through the IdP</td><td><code>&#64;GrantedTo</code> checked as usual</td></tr>
-        <tr><td>A service account of <code>canopy</code></td><td>passes every <code>&#64;GrantedTo</code> — <code>&#64;Username()</code> is <code>system:serviceaccount:canopy:orders</code></td></tr>
+        <tr><td>A service account of <code>my-namespace</code></td><td>passes every <code>&#64;GrantedTo</code> — <code>&#64;Username()</code> is <code>system:serviceaccount:my-namespace:orders</code></td></tr>
         <tr><td>Any other service account (another namespace, a third-party component)</td><td>checked as usual: authenticated, but without any role</td></tr>
       </tbody>
     </table>

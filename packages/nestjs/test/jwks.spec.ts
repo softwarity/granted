@@ -493,7 +493,7 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
 
       it('sends the token to its document and to the jwks_uri it announces — never to another provider', async () => {
         const p = kubernetesLike();
-        expect(await usernameOf(p, sign(keyA, { sub: 'system:serviceaccount:canopy:orders', iss: issuerA }))).toBe('system:serviceaccount:canopy:orders');
+        expect(await usernameOf(p, sign(keyA, { sub: 'system:serviceaccount:my-namespace:orders', iss: issuerA }))).toBe('system:serviceaccount:my-namespace:orders');
         expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
         expect(authorizations['/a/.well-known/openid-configuration']).toBe('Bearer sa-token-1');
         expect(authorizations['/a/certs']).toBe('Bearer sa-token-1');
@@ -524,10 +524,10 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
     });
 
     describe('bypass', () => {
-      const service = 'system:serviceaccount:canopy:orders';
+      const service = 'system:serviceaccount:my-namespace:orders';
 
       function cluster(conf: GrantedJwtPrincipalProviderConfig = {}) {
-        return GrantedJwtPrincipalProvider.keycloak({ discoveryUris: [{ uri: `${baseUrl}/a`, bypass: ['system:serviceaccount:canopy:*'] }, `${baseUrl}/b`], ...conf });
+        return GrantedJwtPrincipalProvider.keycloak({ discoveryUris: [{ uri: `${baseUrl}/a`, bypass: ['system:serviceaccount:my-namespace:*'] }, `${baseUrl}/b`], ...conf });
       }
 
       async function bypassed(p: GrantedJwtPrincipalProvider, token: string): Promise<boolean> {
@@ -546,7 +546,7 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
       it('ignores a sub outside the patterns', async () => {
         const p = cluster();
         expect(await bypassed(p, sign(keyA, { sub: 'system:serviceaccount:monitoring:otel', iss: issuerA }))).toBe(false);
-        expect(await bypassed(p, sign(keyA, { sub: 'system:serviceaccount:canopy', iss: issuerA }))).toBe(false);
+        expect(await bypassed(p, sign(keyA, { sub: 'system:serviceaccount:my-namespace', iss: issuerA }))).toBe(false);
       });
 
       it('never flags the same sub from another provider', async () => {

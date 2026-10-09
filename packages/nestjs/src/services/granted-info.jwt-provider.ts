@@ -26,7 +26,7 @@ export interface OpenIdProvider {
   audience?: JwtAudience;
   /**
    * `sub` patterns (`*` matches anything) whose tokens, from this provider,
-   * pass every `@GrantedTo` — e.g. `'system:serviceaccount:canopy:*'` for the
+   * pass every `@GrantedTo` — e.g. `'system:serviceaccount:my-namespace:*'` for the
    * services of a namespace. Only this provider's tokens can match.
    */
   bypass?: string[];
@@ -374,7 +374,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
       throw new Error('[nestjs-granted] each discoveryUris entry needs a URL');
     }
     if (providers.some(({ bypass }) => bypass && (!Array.isArray(bypass) || bypass.some((pattern) => typeof pattern !== 'string' || !pattern)))) {
-      throw new Error("[nestjs-granted] bypass is a list of sub patterns, e.g. ['system:serviceaccount:canopy:*']");
+      throw new Error("[nestjs-granted] bypass is a list of sub patterns, e.g. ['system:serviceaccount:my-namespace:*']");
     }
     const jwks = Boolean(conf.jwksUri || discoveryUris.length);
     if (conf.jwksUri && (conf.base64Key || conf.pemFile)) {

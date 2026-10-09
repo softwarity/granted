@@ -294,7 +294,7 @@ new GrantedJwtPrincipalProvider({
     {
       uri: 'https://kubernetes.default.svc', // the cluster's API server signs the service account tokens
       bearerTokenFile: '/var/run/secrets/kubernetes.io/serviceaccount/token', // it serves its keys to an authenticated caller only
-      bypass: ['system:serviceaccount:canopy:*'],
+      bypass: ['system:serviceaccount:my-namespace:*'],
     },
     'https://sso.example.com/realms/acme', // users
   ],
@@ -304,7 +304,7 @@ new GrantedJwtPrincipalProvider({
 | Caller | Result on B |
 |---|---|
 | A user, through the IdP | `@GrantedTo` checked as usual |
-| A service account of `canopy` | passes every `@GrantedTo` — `@Username()` is `system:serviceaccount:canopy:orders` |
+| A service account of `my-namespace` | passes every `@GrantedTo` — `@Username()` is `system:serviceaccount:my-namespace:orders` |
 | Any other service account (another namespace, a third-party component) | checked as usual: authenticated, but without any role |
 
 On B's pod, trust the cluster CA, which signs the API server certificate:
