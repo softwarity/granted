@@ -7,20 +7,8 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/getting-started.component').then((m) => m.GettingStartedComponent),
   },
   {
-    path: 'configuration',
-    loadComponent: () => import('./pages/configuration.component').then((m) => m.ConfigurationComponent),
-  },
-  {
     path: 'securing-endpoints',
     loadComponent: () => import('./pages/securing-endpoints.component').then((m) => m.SecuringEndpointsComponent),
-  },
-  {
-    path: 'ownership',
-    loadComponent: () => import('./pages/ownership.component').then((m) => m.OwnershipComponent),
-  },
-  {
-    path: 'boolean-specs',
-    loadComponent: () => import('./pages/boolean-specs.component').then((m) => m.BooleanSpecsComponent),
   },
   {
     path: 'parameter-decorators',
@@ -30,5 +18,17 @@ export const routes: Routes = [
     path: 'info-providers',
     loadComponent: () => import('./pages/info-providers.component').then((m) => m.PrincipalProvidersComponent),
   },
+  {
+    path: 'roles',
+    loadComponent: () => import('./pages/roles.component').then((m) => m.RolesComponent),
+  },
+  {
+    path: 'reference',
+    loadComponent: () => import('./pages/reference.component').then((m) => m.ReferenceComponent),
+  },
+  // Former pages, merged into the ones above.
+  { path: 'ownership', redirectTo: 'securing-endpoints' },
+  { path: 'boolean-specs', redirectTo: 'securing-endpoints' },
+  { path: 'configuration', redirectTo: 'reference' },
   { path: '**', redirectTo: '' },
 ];

@@ -5,142 +5,176 @@
 [![Node](https://img.shields.io/node/v/@softwarity/nestjs-granted.svg)](https://nodejs.org)
 [![Unit tests](https://github.com/softwarity/nestjs-granted/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/softwarity/nestjs-granted/actions/workflows/unit-tests.yml)
 
-**RBAC security for NestJS endpoints.** Declarative, decorator-based authorization built on a small algebra of composable boolean specifications — and a pluggable provider that reads the current user from HTTP headers or from a verified JWT.
+**Decide, route by route, who may call your NestJS API.** Put `@GrantedTo(...)` on a route: a global guard checks it on every request. Your handlers read the caller with `@Username()`, `@Roles()` and `@Tenant()`. The caller comes from gateway headers or from a verified JWT.
 
-📚 **Full documentation:** [softwarity.github.io/nestjs-granted](https://softwarity.github.io/nestjs-granted/)
-
----
-
-## Why?
-
-You have endpoints behind an API gateway (or an OAuth2 proxy) that already authenticated the caller and forwards the identity — either as plain headers (`username`, `roles`) or as a `Bearer` JWT. You don't want another auth stack; you just want to **declare, per route, who is allowed in** and **inject the identity** into your handlers. That's exactly what this module does, and nothing more.
+📚 **Documentation:** [softwarity.github.io/nestjs-granted](https://softwarity.github.io/nestjs-granted/)
 
 ```ts
 @Get('orders/:userId')
-@GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isUser('Param', 'userId'))))
-findOrders(@Username() me: string, @Roles() roles: string[]) { /* ... */ }
+@GrantedTo(or(hasRole('ADMIN'), isUser('Param', 'userId'))) // an admin, or the user named in the URL
+findOrders(@Username() me: string) { /* ... */ }
 ```
 
-## Features
+It doesn't log anyone in: something in front of your service — a gateway, an identity provider — has authenticated the caller and passes the identity on.
 
-- 🛡️ **One decorator to secure a route** — `@GrantedTo(...specs)`, applied by a global guard
-- 🧩 **Composable boolean specifications** — `and`, `or`, `not`, `hasRole`, `isAuthenticated`, `isUser`, `isTenant`, `isTrue`, `isFalse`
-- 💉 **Parameter decorators** — `@Username()`, `@Roles()`, `@Tenant()`
-- 🪜 **Role hierarchy** — declare that one role implies others (`ADMIN ⇒ MANAGER ⇒ USER`); checks and injection see the expanded set
-- 🧹 **Known-roles filtering** — keep only the roles your module owns, ignoring those a shared token carries for other services
-- 🔌 **Pluggable principal provider** — HTTP headers (JSON or CSV roles) or a verified JWT
-- 🔑 **JWT verification** with **IdP presets** — RFC 9068/SCIM, Azure AD/Entra, Keycloak, Okta — or a fully custom claim mapping
-- 🔄 **JWKS key rotation** — verification keys fetched from the IdP's JWKS endpoint, cached, and re-fetched when it rotates them; each key verifies with its own algorithm (RSA, ECDSA, EdDSA), nothing to configure
-- 🌐 **Several IdPs via OpenID discovery** — list their `/.well-known/openid-configuration` URLs: each token is verified with the keys of its own issuer
-- 🤝 **Service-to-service in Kubernetes** — the services of your namespace call each other with their pod's token and pass every check (`bypass`)
-- 🏢 **Multi-tenant aware** — `@Tenant()` injection plus `isTenant` to block cross-tenant access
-- 🪶 **Tiny & dependency-light** — just `jsonwebtoken`; works on NestJS 10, 11 & 12
-
-## Installation
-
-```bash
-npm install @softwarity/nestjs-granted
-# peer deps you probably already have
-npm install @nestjs/common @nestjs/core @nestjs/platform-express rxjs reflect-metadata
-```
-
-### Peer dependencies
-
-| name | version |
-|---|---|
-| @nestjs/common | >=10 <13 |
-| @nestjs/core | >=10 <13 |
-| @nestjs/platform-express | >=10 <13 |
-| rxjs | ^7.5 |
-| reflect-metadata | ^0.1.13 \|\| ^0.2 |
-
-> NestJS 12 ships as ESM only. This library is CommonJS and loads it through Node's `require(esm)`, so with NestJS 12 you need Node.js ≥ 20.19 or ≥ 22.12 — the same requirement NestJS 12 itself has for CommonJS apps. ESM apps work too.
+- [Getting started](#getting-started)
+- [Protect your routes](#protect-your-routes)
+- [Read the caller](#read-the-caller)
+- [Where the identity comes from](#where-the-identity-comes-from) — headers, JWT, several IdPs, the services of your cluster
+- [Roles](#roles)
+- [Options reference](#options-reference)
 
 ---
 
 ## Getting started
 
-### 1. Register the module
+```bash
+npm install @softwarity/nestjs-granted
+```
+
+Node.js ≥ 20 (≥ 20.19 or ≥ 22.12 with NestJS 12), NestJS 10 to 12, Express. Peer dependencies: `@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`, `rxjs`, `reflect-metadata`.
 
 ```ts
 import { Module } from '@nestjs/common';
 import { GrantedModule } from '@softwarity/nestjs-granted';
 
 @Module({
-  imports: [
-    // `apply: false` loads the module but disables enforcement (handy per environment).
-    GrantedModule.forRoot({ apply: true }),
-  ],
+  imports: [GrantedModule.forRoot()],
 })
 export class AppModule {}
 ```
 
-By default the module reads the identity from HTTP headers (`username`, `roles`, `tenant`). To decode it from a JWT instead, pass a `GrantedJwtPrincipalProvider` (see below).
-
-### 2. Inject identity into your handlers
+The caller is read from the `username`, `roles` and `tenant` headers. Your requests carry a JWT instead? See [Where the identity comes from](#where-the-identity-comes-from).
 
 ```ts
-@Get('me')
-me(
-  @Username() username: string,
-  @Roles() roles: string[],
-  @Tenant() tenant: string | undefined,
-) {
-  return { username, roles, tenant };
+@Controller('reports')
+export class ReportsController {
+  @Get()
+  @GrantedTo(hasRole('ADMIN'))
+  list(@Username() username: string) {
+    // only reached by an ADMIN
+  }
 }
 ```
 
-### 3. Secure endpoints
+A route without `@GrantedTo` is open. With it, the request gets a `403` unless every rule passes.
+
+---
+
+## Protect your routes
+
+**Logged-in users only**
 
 ```ts
-@Get('admin')
-@GrantedTo(and(isAuthenticated(), hasRole('ADMIN')))
-adminOnly() { /* ... */ }
+@GrantedTo(isAuthenticated())
 ```
 
-A route with **no** `@GrantedTo` is open. A route with `@GrantedTo(...)` passes only if **every** spec returns `true`.
+**A role** — an implied role counts too, see [Roles](#roles)
 
-`@GrantedTo` also applies at the **controller class** level — a baseline for every route inside it. Class and method specs are **merged**: all of them must pass (class = baseline, method tightens).
+```ts
+@GrantedTo(hasRole('ADMIN'))
+```
+
+**One role among several**
+
+```ts
+@GrantedTo(or(hasRole('ADMIN'), hasRole('ACCOUNTANT')))
+```
+
+**Several conditions** — the arguments must all pass
+
+```ts
+@GrantedTo(isAuthenticated(), not(hasRole('SUSPENDED')))
+```
+
+**A whole controller**
 
 ```ts
 @Controller('admin')
-@GrantedTo(isAuthenticated())          // baseline: every route requires a logged-in caller
+@GrantedTo(isAuthenticated())   // every route of the controller
 export class AdminController {
   @Get('stats')
-  stats() { /* needs: isAuthenticated() */ }
+  stats() {}                    // logged-in users
 
   @Get('config')
-  @GrantedTo(hasRole('ADMIN'))         // tightened: isAuthenticated() AND hasRole('ADMIN')
-  config() { /* ... */ }
+  @GrantedTo(hasRole('ADMIN'))  // logged-in users that are ADMIN
+  config() {}
 }
 ```
 
-> There is no "opt-out": a method can't loosen a class-level spec (specs are AND-merged). Leave a controller un-annotated and secure routes individually if some must stay open.
+A method adds conditions to its controller's, it can't remove them. If a route must stay open, put `@GrantedTo` on each route rather than on the class.
 
-### Denied requests — `GrantedForbiddenException`
+**Users may only touch their own data** — a logged-in user can change an id in the URL or the body to reach someone else's data; roles don't stop that, `isUser` does:
 
-When a spec fails, the guard throws a `GrantedForbiddenException` (a `ForbiddenException`). The caller gets the same bare `403` NestJS sends for any guard returning `false` — nothing about the policy leaks:
+```ts
+// PATCH /users/alice/profile, sent by mallory → 403
+@Patch('users/:userId/profile')
+@GrantedTo(or(hasRole('ADMIN'), isUser('Param', 'userId')))
+updateProfile() {}
 
-```json
-{ "statusCode": 403, "message": "Forbidden resource", "error": "Forbidden" }
+// POST /orders { "customer": { "id": "alice" } }, sent by mallory → 403
+@Post('orders')
+@GrantedTo(or(hasRole('ADMIN'), isUser('Body', 'customer.id')))
+createOrder() {}
 ```
 
-The details stay on the exception, for your app to log in its own format — the library logs nothing itself:
+> This checks the id a request names. A route that *lists* records (`GET /orders`) must still filter its query by the caller, with `@Username()`.
 
-| Property     | Content                                                                                         |
-|--------------|-------------------------------------------------------------------------------------------------|
-| `deniedSpec` | `id` of the first spec that failed, e.g. `hasRole(ADMIN)` — an `and(...)` / `or(...)` is reported whole |
-| `username`   | the caller's username                                                                           |
-| `roles`      | the caller's roles after hierarchy expansion and `knownRoles` filtering — what the specs saw    |
-| `tenant`     | the caller's tenant, if any                                                                     |
+**Users may only touch their own tenant**
+
+```ts
+// POST /tenants/globex/invoices, sent by a user of acme → 403
+@Post('tenants/:tenantId/invoices')
+@GrantedTo(or(hasRole('ADMIN'), isTenant('Param', 'tenantId')))
+createInvoice() {}
+```
+
+A caller without a tenant is refused. Filter your queries with `@Tenant()` as well.
+
+**Reuse a rule**
+
+```ts
+export const ownerOrAdmin = (param: string) => or(hasRole('ADMIN'), isUser('Param', param));
+
+@Delete('users/:userId')
+@GrantedTo(ownerOrAdmin('userId'))
+remove() {}
+```
+
+**Write your own rule**
+
+```ts
+export const hasScope = (scope: string): BooleanSpec => ({
+  id: `hasScope(${scope})`, // shown in the 403 details
+  apply: (request, username, roles, tenant) => (request.header('x-scopes') ?? '').split(' ').includes(scope),
+});
+```
+
+**All the rules**
+
+| Rule | Passes when |
+|---|---|
+| `isAuthenticated()` | the caller is known (not `anonymous`) |
+| `hasRole('ADMIN')` | the caller has the role, directly or [implied](#roles) |
+| `isUser('Param', 'userId')` | the request value is the caller's username — `'Param'`, `'Query'` or `'Body'` (dotted path) |
+| `isTenant('Param', 'tenantId')` | the request value is the caller's tenant; refused when the caller has none |
+| `and(a, b, …)` | all pass |
+| `or(a, b, …)` | one passes |
+| `not(a)` | `a` fails |
+| `isTrue()` / `isFalse()` | always / never — e.g. to lock a route |
+
+### Why did a request get a 403?
+
+The caller gets a bare `403`, with nothing about your rules. The details are on the exception — `GrantedForbiddenException` — for you to log:
 
 ```ts
 @Catch(GrantedForbiddenException)
 export class DenialFilter extends BaseExceptionFilter {
   private readonly logger = new Logger('Access');
   catch(e: GrantedForbiddenException, host: ArgumentsHost) {
-    this.logger.debug(`denied: user=${e.username} roles=[${e.roles}] spec=${e.deniedSpec}`);
-    super.catch(e, host); // unchanged 403 response
+    // e.g. denied: user=bob roles=[USER] rule=hasRole(ADMIN)
+    this.logger.debug(`denied: user=${e.username} roles=[${e.roles}] rule=${e.deniedSpec}`);
+    super.catch(e, host);
   }
 }
 
@@ -148,125 +182,61 @@ export class DenialFilter extends BaseExceptionFilter {
 app.useGlobalFilters(new DenialFilter(app.getHttpAdapter()));
 ```
 
-> Don't put these details in the response: the required roles and the request fields an ownership check compares tell an attacker what to forge.
+`deniedSpec` is the first rule that failed, `roles` the roles it was checked against (after [hierarchy and filtering](#roles)), plus `username` and `tenant`. Don't send them back: they tell an attacker what to forge.
+
+### Turn the checks off, in development or tests
+
+```ts
+GrantedModule.forRoot({ apply: process.env['ENFORCE_RBAC'] !== 'false' })
+```
+
+Every request gets through; `@Username()` and the other decorators keep working.
 
 ---
 
-## Boolean specifications
-
-`@GrantedTo` takes one or more `BooleanSpec`. Combine them freely:
+## Read the caller
 
 ```ts
-GrantedTo(...specs: BooleanSpec[])     // all must pass
-
-and(...specs)                          // every spec passes
-or(...specs)                           // at least one passes
-not(spec)                              // inverts a spec
-isTrue()                               // always allow
-isFalse()                              // always deny
-hasRole(role: string)                  // role is in the user's roles (after hierarchy expansion)
-isAuthenticated()                      // username is set and not 'anonymous'
-isUser(type: 'Param'|'Query'|'Body', field: string)    // request value === username
-isTenant(type: 'Param'|'Query'|'Body', field: string)  // request value === caller's tenant
+@Get('me')
+me(@Username() username: string, @Roles() roles: string[], @Tenant() tenant: string | undefined) {
+  return { username, roles, tenant };
+}
 ```
 
-### Ownership checks — `isUser` / `isTenant`
-
-`isAuthenticated()` and `hasRole()` prove *who* the caller is. They do **not** prove that the record a request targets belongs to that caller — the classic **IDOR** hole, where a logged-in user just edits an id in the URL or body to hit someone else's data.
-
-Consider `POST /orders` protected only by `isAuthenticated()`. Mallory is a real, logged-in user; she forges the body so the order is booked on **Alice's** account:
-
-```bash
-curl -X POST https://api.example.com/orders \
-  -H 'authorization: Bearer <mallory-valid-token>' \
-  -d '{ "customer": { "id": "alice" }, "items": [ ... ] }'
-```
-
-Auth passes — the token is valid. Nothing checks that `body.customer.id` is *her own* id. `isUser` reads that value **from the request** and requires it to equal the caller's `username`:
-
-```ts
-// the owner declared in the body must be the caller (admins excepted)
-@Post('orders')
-@GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isUser('Body', 'customer.id'))))
-createOrder() { /* body.customer.id === caller, or caller is ADMIN */ }
-
-// the resource owner in the URL must be the caller
-@Patch('users/:userId/profile')
-@GrantedTo(or(hasRole('ADMIN'), isUser('Param', 'userId')))
-update(@Param('userId') userId: string) { /* ... */ }
-```
-
-Mallory's forged POST now returns `403` (`'alice'` ≠ `'mallory'`), and she can't read `/users/alice/profile` by swapping the id.
-
-`isTenant` is the same check one level up — for multi-tenant APIs. It matches the **requested** tenant (URL/query/body) against the caller's **claimed** tenant (from the token/headers, never the attacker-controlled payload), blocking cross-tenant access:
-
-```ts
-@Post('tenants/:tenantId/invoices')
-@GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isTenant('Param', 'tenantId'))))
-createInvoice() { /* a request for /tenants/globex/... from an acme token is rejected */ }
-```
-
-> Authorization reads `username`, `roles` and (via `isTenant`) `tenant`. Note `isTenant` only checks that a *requested* tenant matches the *claimed* one — it does not replace data-layer scoping (`WHERE tenant_id = ?`), which you still apply with the injected `@Tenant()` value.
+| Decorator | Gives | When the caller has none |
+|---|---|---|
+| `@Username()` | `string` | `'anonymous'` |
+| `@Roles()` | `string[]` — the roles the rules see, after [hierarchy and filtering](#roles) | `[]` |
+| `@Tenant()` | `string \| undefined` | `undefined` |
 
 ---
 
-## Roles: known set & hierarchy
+## Where the identity comes from
 
-Two module-level options shape the roles before the guard and `@Roles()` ever see them. They work with any provider (header or JWT).
+| Your setup | Use |
+|---|---|
+| A gateway puts the user in HTTP headers | [Headers](#headers-from-a-gateway) — the default |
+| Requests carry `Authorization: Bearer <JWT>` | [`GrantedJwtPrincipalProvider`](#a-jwt--grantedjwtprincipalprovider) |
+| Something else — a session, another scheme | [Your own provider](#your-own-provider) |
 
-**`knownRoles`** — a gateway often issues one token whose roles span several services. Declare the roles *this* module cares about and the rest are dropped, so your view isn't polluted:
+### Headers from a gateway
 
-```ts
-GrantedModule.forRoot({
-  knownRoles: ['ORDER_READ', 'ORDER_WRITE', 'ORDER_ADMIN'],
-});
-// token roles ['ORDER_WRITE', 'BILLING_ADMIN', 'CRM_USER'] → seen as ['ORDER_WRITE']
-```
-
-**`roleHierarchy`** — map a role to the roles it implies. Expansion is transitive and cycle-safe, applied *before* `knownRoles` filtering, for both the guard and `@Roles()`:
+Nothing to configure when your gateway sends `username`, `roles` (a JSON array) and `tenant`. Other names, or roles as a comma-separated list:
 
 ```ts
-GrantedModule.forRoot({
-  roleHierarchy: {
-    ORDER_ADMIN: ['ORDER_WRITE'],
-    ORDER_WRITE: ['ORDER_READ'],
-  },
-});
-// caller holds ['ORDER_ADMIN'] → hasRole('ORDER_READ') passes; @Roles() yields all three
-```
-
----
-
-## Principal providers
-
-The identity is resolved by an `IGrantedPrincipalProvider`. Two are shipped.
-
-### `GrantedPrincipalProvider` (default) — from headers
-
-| info | default header | parsing | fallback |
-|---|---|---|---|
-| `username` | `username` | raw string | `anonymous` |
-| `roles` | `roles` | JSON array, or CSV | `[]` |
-| `tenant` | `tenant` | raw string | `undefined` |
-
-Both the **header names** and the **roles encoding** are configurable:
-
-```ts
-import { GrantedModule, GrantedPrincipalProvider } from '@softwarity/nestjs-granted';
-
 GrantedModule.forRoot({
   principalProvider: new GrantedPrincipalProvider({
-    usernameHeader: 'x-user',   // default 'username'
-    rolesHeader: 'x-roles',     // default 'roles'
-    tenantHeader: 'x-tenant',   // default 'tenant'
-    rolesFormat: 'csv',         // default 'json' — 'ROLE1, ROLE2' instead of ["ROLE1","ROLE2"]
+    usernameHeader: 'x-user',
+    rolesHeader: 'x-roles',
+    tenantHeader: 'x-tenant',
+    rolesFormat: 'csv', // 'ADMIN, USER' instead of ["ADMIN","USER"]
   }),
 });
 ```
 
-> These options are specific to the header provider — JWT identity comes from configurable claims (`rolesClaim`, etc.), and roles there are already an array.
+> Only trust these headers when your service can't be reached without the gateway: anyone else could send them.
 
-### `GrantedJwtPrincipalProvider` — from a verified JWT
+### A JWT — `GrantedJwtPrincipalProvider`
 
 Reads `Authorization: Bearer <token>`, verifies the token and maps its claims to `username` / `roles` / `tenant`. A missing or invalid token gives an **anonymous** request: your `@GrantedTo` specs decide what it may reach.
 
@@ -380,7 +350,97 @@ GrantedJwtPrincipalProvider.keycloak({
 
 With `discoveryUris`, the issuer comes from each document, and an entry can have its own audience: `{ uri, audience: 'internal' }`.
 
-#### Options
+All the options: [Options reference](#options-reference).
+
+Good to know:
+- A token signed by a key the provider doesn't know yet triggers one re-fetch: a key rotation needs no restart.
+- If an IdP is down, the last known keys are kept and a warning is logged.
+- The algorithm comes from the key, never from the token: `alg: none` and RSA/HMAC confusion are rejected.
+- The token and the key material are never logged.
+
+### Your own provider
+
+Implement `IGrantedPrincipalProvider`. Each value has two getters: one for the guard (`Request`), one for the parameter decorators (`IncomingMessage`).
+
+```ts
+export class SessionProvider implements IGrantedPrincipalProvider {
+  constructor(private readonly sessions: SessionStore) {}
+
+  // Optional: awaited once per request, before the getters — the place for I/O.
+  async prepare(req: IncomingMessage): Promise<void> {
+    req['session'] = await this.sessions.find(req.headers['x-session-id'] as string);
+  }
+
+  getUsernameFromRequest(req: Request) { return req['session']?.username ?? 'anonymous'; }
+  getRolesFromRequest(req: Request) { return req['session']?.roles ?? []; }
+  getTenantFromRequest(req: Request) { return req['session']?.tenant; }
+
+  getUsernameFromIncomingMessage(msg: IncomingMessage) { return msg['session']?.username ?? 'anonymous'; }
+  getRolesFromIncomingMessage(msg: IncomingMessage) { return msg['session']?.roles ?? []; }
+  getTenantFromIncomingMessage(msg: IncomingMessage) { return msg['session']?.tenant; }
+}
+
+GrantedModule.forRoot({ principalProvider: new SessionProvider(sessions) });
+```
+
+A `prepare()` that throws fails the request: catch what should rather give an anonymous caller. To let a caller through every rule, also implement `isBypassed(request): boolean`.
+
+---
+
+## Roles
+
+Two options of `forRoot` adjust the caller's roles before any rule runs, whatever they come from. `@Roles()` gives the adjusted list.
+
+**A role implies others — `roleHierarchy`**
+
+```ts
+GrantedModule.forRoot({
+  roleHierarchy: {
+    ADMIN: ['MANAGER'],
+    MANAGER: ['USER'],
+  },
+});
+// a caller with ['ADMIN'] passes hasRole('MANAGER') and hasRole('USER')
+```
+
+**Ignore the roles meant for other services — `knownRoles`**
+
+```ts
+GrantedModule.forRoot({
+  knownRoles: ['ORDER_READ', 'ORDER_WRITE', 'ORDER_ADMIN'],
+});
+// token roles ['ORDER_WRITE', 'BILLING_ADMIN', 'CRM_USER'] → ['ORDER_WRITE']
+```
+
+With both, the hierarchy is applied first: an implied role is kept if it is known.
+
+---
+
+## Options reference
+
+### `GrantedModule.forRoot(options)`
+
+| Option | Default | |
+|---|---|---|
+| `apply` | `true` | `false` lets every request through; the decorators keep working. |
+| `principalProvider` | headers | [Where the identity comes from](#where-the-identity-comes-from). |
+| `roleHierarchy` | — | A role → the roles it implies: [Roles](#roles). |
+| `knownRoles` | all roles kept | The roles to keep: [Roles](#roles). |
+
+Options are read once, at startup — there is no `forRootAsync`. Read your environment variables or files before, and pass the values.
+
+### `new GrantedPrincipalProvider(options)` — headers
+
+| Option | Default | |
+|---|---|---|
+| `usernameHeader` | `'username'` | Missing → `'anonymous'`. |
+| `rolesHeader` | `'roles'` | Missing → `[]`. |
+| `tenantHeader` | `'tenant'` | Missing → `undefined`. |
+| `rolesFormat` | `'json'` | `'json'`: `["ADMIN","USER"]`. `'csv'`: `ADMIN, USER`. |
+
+### `GrantedJwtPrincipalProvider` — JWT
+
+`new GrantedJwtPrincipalProvider(options)`, or a preset that sets the claims: `.rfc9068()`, `.azureAd()`, `.keycloak()`, `.okta()`.
 
 | Option | Default | |
 |---|---|---|
@@ -397,34 +457,6 @@ With `discoveryUris`, the issuer comes from each document, and an entry can have
 | `jwksCacheMaxAge` | 10 min | Keys and documents older than this are re-fetched. |
 | `jwksCooldown` | 30 s | At most one fetch per IdP in this delay. |
 | `jwksTimeout` | 5 s | Timeout of a fetch. |
-
-Good to know:
-- A token signed by a key the provider doesn't know yet triggers one re-fetch: a key rotation needs no restart.
-- If an IdP is down, the last known keys are kept and a warning is logged.
-- The algorithm comes from the key, never from the token: `alg: none` and RSA/HMAC confusion are rejected.
-- The token and the key material are never logged.
-
-### Custom provider
-
-Implement `IGrantedPrincipalProvider` to read the identity from anywhere. Handle both `Request` (the guard) and `IncomingMessage` (the parameter decorators):
-
-```ts
-export class MyGrantedPrincipalProvider implements IGrantedPrincipalProvider {
-  getUsernameFromRequest(req: Request): string { return req.header('x-user') || 'anonymous'; }
-  getRolesFromRequest(req: Request): string[] { return JSON.parse(req.header('x-roles') || '[]'); }
-  getTenantFromRequest(req: Request): string | undefined { return req.header('x-tenant') || undefined; }
-
-  getUsernameFromIncomingMessage(msg: IncomingMessage): string { return (msg.headers['x-user'] as string) || 'anonymous'; }
-  getRolesFromIncomingMessage(msg: IncomingMessage): string[] { return JSON.parse((msg.headers['x-roles'] as string) || '[]'); }
-  getTenantFromIncomingMessage(msg: IncomingMessage): string | undefined { return (msg.headers['x-tenant'] as string) || undefined; }
-}
-```
-
-```ts
-GrantedModule.forRoot({ apply: true, principalProvider: new MyGrantedPrincipalProvider() })
-```
-
-Resolving the identity needs I/O (a remote key set, a session store…)? Also implement the optional `prepare(request): Promise<void>` hook. The guard awaits it once per request, before any getter is called — on open routes and with `apply: false` too, since the parameter decorators run after the guard. Store what the getters need on the request: they stay synchronous.
 
 ---
 

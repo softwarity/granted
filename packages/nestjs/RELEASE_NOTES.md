@@ -14,7 +14,7 @@
 
 - `granted-info.jwt-provider.ts`: `OpenIdProvider`, `JwtAudience`. Each source carries its issuer, audience and bypass; a payload is flagged as bypassing only once verified by its own source. `app.guard.ts` returns `true` before evaluating the specs when `isBypassed` says so.
 - `test/jwks.spec.ts`: the token reaches its IdP's document and keys only, a rotated file is re-read, a missing file fails that IdP alone; bypass on matching `sub` only, from its own IdP only, never on an unverified, expired or unsigned token; audience per entry. `test/guard.spec.ts`: a bypassing principal passes every spec.
-- Docs (README and site): the *GrantedJwtPrincipalProvider* section rewritten around use cases — a key file, a JWKS URL, several IdPs, the services of a cluster — with a single options table.
+- Docs (README and site) rewritten around use cases: *Getting started*, *Protect your routes* (with ownership, the rules and the 403 details), *Read the caller*, *Where the identity comes from* (headers, a JWT — key file, JWKS URL, several IdPs, the services of a cluster —, your own provider), *Roles*, *Options reference*. The site's former *Resource ownership*, *Boolean specifications* and *Configuration* pages redirect to the new ones.
 
 ---
 

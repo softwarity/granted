@@ -18,11 +18,10 @@ interface DocLink {
 export class AppComponent {
   protected readonly links: DocLink[] = [
     { path: '/', label: 'Getting started', icon: 'rocket_launch' },
-    { path: '/configuration', label: 'Configuration', icon: 'settings' },
-    { path: '/securing-endpoints', label: 'Securing endpoints', icon: 'lock' },
-    { path: '/ownership', label: 'Resource ownership', icon: 'verified_user' },
-    { path: '/boolean-specs', label: 'Boolean specifications', icon: 'rule' },
-    { path: '/parameter-decorators', label: 'Parameter decorators', icon: 'tune' },
-    { path: '/info-providers', label: 'Principal providers', icon: 'badge' },
+    { path: '/securing-endpoints', label: 'Protect your routes', icon: 'lock' },
+    { path: '/parameter-decorators', label: 'Read the caller', icon: 'badge' },
+    { path: '/info-providers', label: 'Where the identity comes from', icon: 'key' },
+    { path: '/roles', label: 'Roles', icon: 'account_tree' },
+    { path: '/reference', label: 'Options reference', icon: 'settings' },
   ];
 }

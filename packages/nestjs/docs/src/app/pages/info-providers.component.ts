@@ -6,71 +6,35 @@ import { CodeComponent } from '../code/code.component';
   selector: 'app-info-providers',
   imports: [CodeComponent, RouterLink],
   template: `
-    <h2>Principal providers</h2>
-
-    <p>
-      An <strong>principal provider</strong> is the strategy that resolves the caller's identity from the
-      request. It is set once via <code>forRoot(&#123; principalProvider &#125;)</code> and used by both the
-      <a routerLink="/securing-endpoints">guard</a> (for <code>username</code> / <code>roles</code>) and
-      the <a routerLink="/parameter-decorators">parameter decorators</a>. Two implementations ship with
-      the library; you can also write your own.
-    </p>
-
-    <app-code lang="ts">interface IGrantedPrincipalProvider &#123;
-  prepare?(request: IncomingMessage): Promise&lt;void&gt;; // optional async step, see Custom provider
-  isBypassed?(request: Request): boolean;              // optional: pass every &#64;GrantedTo, see bypass
-
-  getUsernameFromRequest(request: Request): string;
-  getRolesFromRequest(request: Request): string[];
-  getTenantFromRequest(request: Request): string | undefined;
-
-  getUsernameFromIncomingMessage(msg: IncomingMessage): string;
-  getRolesFromIncomingMessage(msg: IncomingMessage): string[];
-  getTenantFromIncomingMessage(msg: IncomingMessage): string | undefined;
-&#125;</app-code>
-
-    <div class="callout">
-      Two shapes per field — <code>Request</code> and <code>IncomingMessage</code> — because the guard
-      runs against the Express <code>Request</code>, while parameter decorators run later in the
-      pipeline against the raw <code>IncomingMessage</code>. A custom provider must implement both.
-    </div>
-
-    <h3>GrantedPrincipalProvider — from headers (default)</h3>
-    <p>Used automatically when you don't pass an <code>principalProvider</code>.</p>
+    <h2>Where the identity comes from</h2>
     <table>
-      <thead><tr><th>Field</th><th>Default header</th><th>Parsing</th><th>Fallback</th></tr></thead>
+      <thead><tr><th>Your setup</th><th>Use</th></tr></thead>
       <tbody>
-        <tr><td><code>username</code></td><td><code>username</code></td><td>raw string</td><td><code>'anonymous'</code></td></tr>
-        <tr><td><code>roles</code></td><td><code>roles</code></td><td>JSON array, or CSV</td><td><code>[]</code></td></tr>
-        <tr><td><code>tenant</code></td><td><code>tenant</code></td><td>raw string</td><td><code>undefined</code></td></tr>
+        <tr><td>A gateway puts the user in HTTP headers</td><td><a routerLink="/info-providers" fragment="headers">Headers</a> — the default</td></tr>
+        <tr><td>Requests carry <code>Authorization: Bearer &lt;JWT&gt;</code></td><td><a routerLink="/info-providers" fragment="jwt"><code>GrantedJwtPrincipalProvider</code></a></td></tr>
+        <tr><td>Something else — a session, another scheme</td><td><a routerLink="/info-providers" fragment="custom">Your own provider</a></td></tr>
       </tbody>
     </table>
-    <app-code lang="ts">GrantedModule.forRoot(&#123; apply: true &#125;); // GrantedPrincipalProvider is implied</app-code>
-    <p>
-      A typical upstream (API gateway, OAuth2 proxy) sets these headers after authentication, e.g.
-      <code>username: alice</code>, <code>roles: ["ADMIN","USER"]</code>.
-    </p>
 
-    <h4>Configurable header names &amp; roles format</h4>
+    <h3 id="headers">Headers from a gateway</h3>
     <p>
-      Both the <strong>header names</strong> and the <strong>roles encoding</strong> are configurable.
-      Header names default to <code>username</code> / <code>roles</code> / <code>tenant</code>; the roles
-      header is a JSON array by default, or a trimmed comma-separated list with
-      <code>rolesFormat: 'csv'</code>:
+      Nothing to configure when your gateway sends <code>username</code>, <code>roles</code> (a JSON array) and
+      <code>tenant</code>. Other names, or roles as a comma-separated list:
     </p>
-    <app-code lang="ts">import &#123; GrantedModule, GrantedPrincipalProvider &#125; from '&#64;softwarity/nestjs-granted';
-
-GrantedModule.forRoot(&#123;
+    <app-code lang="ts">GrantedModule.forRoot(&#123;
   principalProvider: new GrantedPrincipalProvider(&#123;
-    usernameHeader: 'x-user',   // default 'username'
-    rolesHeader: 'x-roles',     // default 'roles'
-    tenantHeader: 'x-tenant',   // default 'tenant'
-    rolesFormat: 'csv',         // default 'json' — 'ROLE1, ROLE2' instead of ["ROLE1","ROLE2"]
+    usernameHeader: 'x-user',
+    rolesHeader: 'x-roles',
+    tenantHeader: 'x-tenant',
+    rolesFormat: 'csv', // 'ADMIN, USER' instead of ["ADMIN","USER"]
   &#125;),
 &#125;);</app-code>
-    <p class="callout">These options are specific to the header provider — JWT identity comes from configurable claims (<code>rolesClaim</code>, etc.), and roles there are already an array.</p>
+    <div class="callout warn">
+      Only trust these headers when your service can't be reached without the gateway: anyone else could send
+      them.
+    </div>
 
-    <h3>GrantedJwtPrincipalProvider — from a verified JWT</h3>
+    <h3 id="jwt">A JWT — <code>GrantedJwtPrincipalProvider</code></h3>
     <p>
       Reads <code>Authorization: Bearer &lt;token&gt;</code>, verifies the token and maps its claims to
       <code>username</code> / <code>roles</code> / <code>tenant</code>. A missing or invalid token gives an
@@ -184,25 +148,7 @@ await fetch('http://billing/api/invoices', &#123; headers: &#123; authorization:
       audience: <code>&#123; uri, audience: 'internal' &#125;</code>.
     </p>
 
-    <h4>Options</h4>
-    <table>
-      <thead><tr><th>Option</th><th>Default</th><th></th></tr></thead>
-      <tbody>
-        <tr><td><code>pemFile</code> / <code>base64Key</code></td><td>—</td><td>Public key, as a file or inline PEM.</td></tr>
-        <tr><td><code>algorithm</code></td><td><code>'ES256'</code> with a key; each key's own with a JWKS</td><td>With a JWKS, an optional allowlist: <code>['ES256', 'EdDSA']</code>.</td></tr>
-        <tr><td><code>jwksUri</code></td><td>—</td><td>JWKS URL. Alongside <code>discoveryUris</code>, needs <code>issuer</code>.</td></tr>
-        <tr><td><code>discoveryUris</code></td><td>—</td><td>IdP URLs, or <code>&#123; uri, bearerTokenFile?, audience?, bypass? &#125;</code>.</td></tr>
-        <tr><td>↳ <code>bearerTokenFile</code></td><td>—</td><td>Token sent to this IdP only, when it wants one (the Kubernetes API server does). Re-read at each fetch.</td></tr>
-        <tr><td>↳ <code>audience</code></td><td><code>audience</code></td><td>Accepted <code>aud</code> for this IdP's tokens.</td></tr>
-        <tr><td>↳ <code>bypass</code></td><td>—</td><td><code>sub</code> patterns (<code>*</code> = anything) whose tokens from this IdP pass every <code>&#64;GrantedTo</code>.</td></tr>
-        <tr><td><code>issuer</code></td><td>not checked</td><td>Accepted <code>iss</code>, with <code>pemFile</code> / <code>base64Key</code> / <code>jwksUri</code>.</td></tr>
-        <tr><td><code>audience</code></td><td>not checked</td><td>Accepted <code>aud</code>.</td></tr>
-        <tr><td><code>usernameClaim</code> / <code>rolesClaim</code> / <code>tenantClaim</code></td><td>see presets</td><td>Claim paths.</td></tr>
-        <tr><td><code>jwksCacheMaxAge</code></td><td>10 min</td><td>Keys and documents older than this are re-fetched.</td></tr>
-        <tr><td><code>jwksCooldown</code></td><td>30 s</td><td>At most one fetch per IdP in this delay.</td></tr>
-        <tr><td><code>jwksTimeout</code></td><td>5 s</td><td>Timeout of a fetch.</td></tr>
-      </tbody>
-    </table>
+    <p>All the options: <a routerLink="/reference">Options reference</a>.</p>
     <p>Good to know:</p>
     <ul>
       <li>A token signed by a key the provider doesn't know yet triggers one re-fetch: a key rotation needs no restart.</li>
@@ -211,61 +157,31 @@ await fetch('http://billing/api/invoices', &#123; headers: &#123; authorization:
       <li>The token and the key material are never logged.</li>
     </ul>
 
-    <h3>Custom provider</h3>
+    <h3 id="custom">Your own provider</h3>
     <p>
-      Implement <code>IGrantedPrincipalProvider</code> to read identity from anywhere — a different header
-      scheme, a session store, a service-mesh header set, etc. Handle both <code>Request</code> and
-      <code>IncomingMessage</code>:
-    </p>
-    <app-code lang="ts">import &#123; IGrantedPrincipalProvider &#125; from '&#64;softwarity/nestjs-granted';
-import &#123; Request &#125; from 'express';
-import &#123; IncomingMessage &#125; from 'http';
-
-export class HeaderProvider implements IGrantedPrincipalProvider &#123;
-  getUsernameFromRequest(req: Request): string &#123;
-    return req.header('x-user') || 'anonymous';
-  &#125;
-  getRolesFromRequest(req: Request): string[] &#123;
-    return JSON.parse(req.header('x-roles') || '[]');
-  &#125;
-  getTenantFromRequest(req: Request): string | undefined &#123;
-    return req.header('x-tenant') || undefined;
-  &#125;
-
-  getUsernameFromIncomingMessage(msg: IncomingMessage): string &#123;
-    return (msg.headers['x-user'] as string) || 'anonymous';
-  &#125;
-  getRolesFromIncomingMessage(msg: IncomingMessage): string[] &#123;
-    return JSON.parse((msg.headers['x-roles'] as string) || '[]');
-  &#125;
-  getTenantFromIncomingMessage(msg: IncomingMessage): string | undefined &#123;
-    return (msg.headers['x-tenant'] as string) || undefined;
-  &#125;
-&#125;</app-code>
-    <app-code lang="ts">GrantedModule.forRoot(&#123; apply: true, principalProvider: new HeaderProvider() &#125;);</app-code>
-
-    <h4>Asynchronous resolution — <code>prepare()</code></h4>
-    <p>
-      The getters are synchronous. If resolving the identity needs I/O — a remote key set, a session
-      store… — also implement the optional <code>prepare(request)</code> hook. The guard awaits it once per
-      request, before any getter is called — on open routes and with <code>apply: false</code> too, since the
-      parameter decorators run after the guard. Store what the getters need on the request:
+      Implement <code>IGrantedPrincipalProvider</code>. Each value has two getters: one for the guard
+      (<code>Request</code>), one for the parameter decorators (<code>IncomingMessage</code>).
     </p>
     <app-code lang="ts">export class SessionProvider implements IGrantedPrincipalProvider &#123;
   constructor(private readonly sessions: SessionStore) &#123;&#125;
 
+  // Optional: awaited once per request, before the getters — the place for I/O.
   async prepare(req: IncomingMessage): Promise&lt;void&gt; &#123;
     req['session'] = await this.sessions.find(req.headers['x-session-id'] as string);
   &#125;
 
-  getUsernameFromRequest(req: Request): string &#123;
-    return req['session']?.username || 'anonymous';
-  &#125;
-  // ...the other getters read req['session'] the same way
+  getUsernameFromRequest(req: Request) &#123; return req['session']?.username ?? 'anonymous'; &#125;
+  getRolesFromRequest(req: Request) &#123; return req['session']?.roles ?? []; &#125;
+  getTenantFromRequest(req: Request) &#123; return req['session']?.tenant; &#125;
+
+  getUsernameFromIncomingMessage(msg: IncomingMessage) &#123; return msg['session']?.username ?? 'anonymous'; &#125;
+  getRolesFromIncomingMessage(msg: IncomingMessage) &#123; return msg['session']?.roles ?? []; &#125;
+  getTenantFromIncomingMessage(msg: IncomingMessage) &#123; return msg['session']?.tenant; &#125;
 &#125;</app-code>
+    <app-code lang="ts">GrantedModule.forRoot(&#123; principalProvider: new SessionProvider(sessions) &#125;);</app-code>
     <p>
-      <code>GrantedJwtPrincipalProvider</code> uses this hook to fetch its JWKS. A <code>prepare()</code> that
-      throws fails the request, so catch what should rather yield an anonymous caller.
+      A <code>prepare()</code> that throws fails the request: catch what should rather give an anonymous caller.
+      To let a caller through every rule, also implement <code>isBypassed(request): boolean</code>.
     </p>
   `,
 })

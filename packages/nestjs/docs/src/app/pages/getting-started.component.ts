@@ -7,13 +7,13 @@ import { CodeComponent } from '../code/code.component';
   imports: [CodeComponent, RouterLink],
   styles: [
     `
-      .features {
+      .cards {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
         gap: 12px;
         margin: 0 0 28px 0;
       }
-      .feature-card {
+      .card {
         display: flex;
         flex-direction: column;
         gap: 6px;
@@ -24,176 +24,118 @@ import { CodeComponent } from '../code/code.component';
         text-decoration: none;
         transition: all 0.15s;
       }
-      .feature-card:hover {
+      .card:hover {
         border-color: var(--accent-purple);
         background-color: rgba(163, 113, 247, 0.1);
         text-decoration: none;
         transform: translateY(-1px);
       }
-      .feature-icon {
+      .card-icon {
         font-size: 1.6rem;
         line-height: 1;
         color: var(--accent-purple);
       }
-      .feature-title {
+      .card-title {
         font-weight: 600;
         color: var(--text-primary);
         font-size: 0.95rem;
       }
-      .feature-desc {
+      .card-desc {
         color: var(--text-secondary);
         font-size: 0.85rem;
         line-height: 1.45;
-      }
-      .feature-desc code {
-        font-size: 0.85em;
       }
     `,
   ],
   template: `
     <h2>Getting started</h2>
-
     <p>
-      <strong>&#64;softwarity/nestjs-granted</strong> adds <strong>RBAC authorization</strong> to your
-      NestJS HTTP endpoints. You declare, per route, <em>who is allowed in</em> with a single
-      <code>&#64;GrantedTo(...)</code> decorator, and you inject the caller's identity
-      (<code>username</code>, <code>roles</code>, <code>tenant</code>) with parameter decorators.
-      A global guard does the enforcement.
+      <strong>&#64;softwarity/nestjs-granted</strong> decides, route by route, who may call your NestJS API.
+      Put <code>&#64;GrantedTo(...)</code> on a route: a global guard checks it on every request. Your handlers
+      read the caller with <code>&#64;Username()</code>, <code>&#64;Roles()</code> and <code>&#64;Tenant()</code>.
     </p>
-
     <div class="callout">
-      <strong>Assumption:</strong> the caller is <em>already authenticated</em> upstream — by an API
-      gateway, an OAuth2 proxy, or a sidecar — which forwards the identity either as plain HTTP headers
-      or as a <code>Bearer</code> JWT. This library does <strong>not</strong> do login, sessions, or
-      token issuance. It does authorization and identity injection, nothing more.
+      It doesn't log anyone in. Something in front of your service — a gateway, an identity provider — has
+      authenticated the caller and passes the identity on, as HTTP headers or as a JWT.
     </div>
-
-    <h3>Features</h3>
-    <section class="features">
-      <a routerLink="/securing-endpoints" class="feature-card">
-        <span class="feature-icon material-symbols-outlined">shield</span>
-        <span class="feature-title">Declarative guard</span>
-        <span class="feature-desc">One <code>&#64;GrantedTo(...)</code> per route or controller, enforced by a global guard.</span>
-      </a>
-      <a routerLink="/boolean-specs" class="feature-card">
-        <span class="feature-icon material-symbols-outlined">extension</span>
-        <span class="feature-title">Composable specs</span>
-        <span class="feature-desc"><code>and</code>, <code>or</code>, <code>not</code>, <code>hasRole</code>, <code>isAuthenticated</code>, <code>isUser</code>, <code>isTenant</code>.</span>
-      </a>
-      <a routerLink="/ownership" class="feature-card">
-        <span class="feature-icon material-symbols-outlined">verified_user</span>
-        <span class="feature-title">Ownership / anti-IDOR</span>
-        <span class="feature-desc"><code>isUser</code> &amp; <code>isTenant</code> check the targeted record is the caller's.</span>
-      </a>
-      <a routerLink="/parameter-decorators" class="feature-card">
-        <span class="feature-icon material-symbols-outlined">input</span>
-        <span class="feature-title">Parameter decorators</span>
-        <span class="feature-desc">Inject <code>&#64;Username()</code>, <code>&#64;Roles()</code>, <code>&#64;Tenant()</code>.</span>
-      </a>
-      <a routerLink="/configuration" class="feature-card">
-        <span class="feature-icon material-symbols-outlined">account_tree</span>
-        <span class="feature-title">Role hierarchy</span>
-        <span class="feature-desc">One role implies others (<code>ADMIN ⇒ MANAGER ⇒ USER</code>), expanded transitively.</span>
-      </a>
-      <a routerLink="/configuration" class="feature-card">
-        <span class="feature-icon material-symbols-outlined">filter_alt</span>
-        <span class="feature-title">Known-roles filter</span>
-        <span class="feature-desc">Keep only the roles your module owns; ignore a shared token's noise.</span>
-      </a>
-      <a routerLink="/info-providers" class="feature-card">
-        <span class="feature-icon material-symbols-outlined">key</span>
-        <span class="feature-title">JWT + IdP presets</span>
-        <span class="feature-desc">PEM or JWKS with key rotation; RFC 9068, Azure AD, Keycloak, Okta presets.</span>
-      </a>
-      <a routerLink="/info-providers" class="feature-card">
-        <span class="feature-icon material-symbols-outlined">swap_horiz</span>
-        <span class="feature-title">Header or JWT</span>
-        <span class="feature-desc">Pluggable provider; roles header as JSON or CSV.</span>
-      </a>
-    </section>
-
-    <h3>Compatibility</h3>
-    <ul>
-      <li>Node.js &ge; 20 (&ge; 20.19 or &ge; 22.12 with NestJS 12, which ships as ESM only)</li>
-      <li>NestJS &ge; 10 (tested with 10, 11 and 12)</li>
-      <li>Express platform (<code>&#64;nestjs/platform-express</code>)</li>
-    </ul>
 
     <h3>1. Install</h3>
     <app-code lang="bash">npm install &#64;softwarity/nestjs-granted</app-code>
-    <p>Peer deps you most likely already have:</p>
-    <app-code lang="bash">npm install &#64;nestjs/common &#64;nestjs/core &#64;nestjs/platform-express rxjs reflect-metadata</app-code>
+    <p>Node.js ≥ 20 (≥ 20.19 or ≥ 22.12 with NestJS 12), NestJS 10 to 12, Express.</p>
 
     <h3>2. Register the module</h3>
     <app-code lang="ts">import &#123; Module &#125; from '&#64;nestjs/common';
 import &#123; GrantedModule &#125; from '&#64;softwarity/nestjs-granted';
 
 &#64;Module(&#123;
-  imports: [
-    // apply: true enforces &#64;GrantedTo; set false to load the module but disable checks.
-    GrantedModule.forRoot(&#123; apply: true &#125;),
-  ],
+  imports: [GrantedModule.forRoot()],
 &#125;)
 export class AppModule &#123;&#125;</app-code>
     <p>
-      <code>forRoot</code> registers a global guard (<code>APP_GUARD</code>) and a global interceptor
-      (<code>APP_INTERCEPTOR</code>) — no further wiring per controller. With no options, it defaults to
-      <code>&#123; apply: true &#125;</code> reading the identity from HTTP headers. See
-      <a routerLink="/configuration">Configuration</a> for the full reference.
+      The caller is read from the <code>username</code>, <code>roles</code> and <code>tenant</code> headers.
+      Your requests carry a JWT instead? See <a routerLink="/info-providers">Where the identity comes from</a>.
     </p>
 
-    <h3>3. Inject the identity</h3>
+    <h3>3. Protect a route</h3>
     <app-code lang="ts">import &#123; Controller, Get &#125; from '&#64;nestjs/common';
-import &#123; Username, Roles, Tenant &#125; from '&#64;softwarity/nestjs-granted';
+import &#123; GrantedTo, hasRole, Username &#125; from '&#64;softwarity/nestjs-granted';
 
-&#64;Controller()
-export class MeController &#123;
-  &#64;Get('me')
-  me(
-    &#64;Username() username: string,
-    &#64;Roles() roles: string[],
-    &#64;Tenant() tenant: string | undefined,
-  ) &#123;
-    return &#123; username, roles, tenant &#125;;
-  &#125;
-&#125;</app-code>
-    <p>Details on the <a routerLink="/parameter-decorators">Parameter decorators</a> page.</p>
-
-    <h3>4. Secure an endpoint</h3>
-    <app-code lang="ts">import &#123; Controller, Get &#125; from '&#64;nestjs/common';
-import &#123; GrantedTo, and, isAuthenticated, hasRole &#125; from '&#64;softwarity/nestjs-granted';
-
-&#64;Controller('admin')
-export class AdminController &#123;
-  &#64;Get('reports')
-  &#64;GrantedTo(and(isAuthenticated(), hasRole('ADMIN')))
-  reports() &#123;
-    return /* ... */;
+&#64;Controller('reports')
+export class ReportsController &#123;
+  &#64;Get()
+  &#64;GrantedTo(hasRole('ADMIN'))
+  list(&#64;Username() username: string) &#123;
+    // only reached by an ADMIN
   &#125;
 &#125;</app-code>
     <p>
-      A route with <strong>no</strong> <code>&#64;GrantedTo</code> is open. A route with
-      <code>&#64;GrantedTo(...)</code> passes only when <strong>every</strong> spec returns
-      <code>true</code>. The full algebra (<code>and</code>, <code>or</code>, <code>not</code>,
-      <code>hasRole</code>, <code>isAuthenticated</code>, <code>isUser</code>, …) lives on the
-      <a routerLink="/boolean-specs">Boolean specifications</a> page.
+      A route without <code>&#64;GrantedTo</code> is open. With it, the request gets a <code>403</code> unless every
+      rule passes.
     </p>
 
-    <h3>Where identity comes from</h3>
-    <p>
-      By default the identity is read from request headers (<code>username</code>, <code>roles</code>,
-      <code>tenant</code>). To decode it from a verified JWT instead, pass a
-      <code>GrantedJwtPrincipalProvider</code> (with presets for Azure AD, Keycloak, Okta, RFC 9068) — or
-      implement your own. See <a routerLink="/info-providers">Principal providers</a>.
-    </p>
-
-    <h3>What's next</h3>
-    <p>
-      Read <a routerLink="/configuration">Configuration</a> for the module options,
-      <a routerLink="/securing-endpoints">Securing endpoints</a> for the guard semantics and recipes,
-      <a routerLink="/boolean-specs">Boolean specifications</a> for the full spec reference, or
-      <a routerLink="/info-providers">Principal providers</a> for header / JWT / custom identity sources.
-    </p>
+    <h3>What do you want to do?</h3>
+    <section class="cards">
+      <a routerLink="/securing-endpoints" class="card">
+        <span class="card-icon material-symbols-outlined">lock</span>
+        <span class="card-title">Restrict a route</span>
+        <span class="card-desc">To logged-in users, to a role, or to several conditions.</span>
+      </a>
+      <a routerLink="/securing-endpoints" class="card">
+        <span class="card-icon material-symbols-outlined">verified_user</span>
+        <span class="card-title">Users touch only their data</span>
+        <span class="card-desc">Refuse a request naming someone else's id or tenant.</span>
+      </a>
+      <a routerLink="/parameter-decorators" class="card">
+        <span class="card-icon material-symbols-outlined">badge</span>
+        <span class="card-title">Read the caller</span>
+        <span class="card-desc"><code>&#64;Username()</code>, <code>&#64;Roles()</code>, <code>&#64;Tenant()</code> in a handler.</span>
+      </a>
+      <a routerLink="/roles" class="card">
+        <span class="card-icon material-symbols-outlined">account_tree</span>
+        <span class="card-title">Shape the roles</span>
+        <span class="card-desc">ADMIN implies USER; ignore the roles meant for other services.</span>
+      </a>
+      <a routerLink="/info-providers" class="card">
+        <span class="card-icon material-symbols-outlined">key</span>
+        <span class="card-title">Verify JWTs</span>
+        <span class="card-desc">From a key file, a JWKS URL, or several identity providers.</span>
+      </a>
+      <a routerLink="/info-providers" class="card">
+        <span class="card-icon material-symbols-outlined">hub</span>
+        <span class="card-title">Let your services through</span>
+        <span class="card-desc">The services of your cluster call each other with their pod's token.</span>
+      </a>
+      <a routerLink="/securing-endpoints" class="card">
+        <span class="card-icon material-symbols-outlined">report</span>
+        <span class="card-title">Understand a 403</span>
+        <span class="card-desc">Log which rule refused the caller, without telling the caller.</span>
+      </a>
+      <a routerLink="/reference" class="card">
+        <span class="card-icon material-symbols-outlined">settings</span>
+        <span class="card-title">All the options</span>
+        <span class="card-desc">Module, header provider and JWT provider.</span>
+      </a>
+    </section>
   `,
 })
 export class GettingStartedComponent {}

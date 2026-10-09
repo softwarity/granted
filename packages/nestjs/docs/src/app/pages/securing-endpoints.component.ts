@@ -6,154 +6,130 @@ import { CodeComponent } from '../code/code.component';
   selector: 'app-securing-endpoints',
   imports: [CodeComponent, RouterLink],
   template: `
-    <h2>Securing endpoints</h2>
-
+    <h2>Protect your routes</h2>
     <p>
-      Authorization is expressed with the <code>&#64;GrantedTo(...)</code> method decorator. It attaches
-      one or more <a routerLink="/boolean-specs">boolean specifications</a> to the route; the global
-      <code>AppGuard</code> evaluates them on every request.
+      Put <code>&#64;GrantedTo(...)</code> on a route or a controller. The request gets through only if every rule
+      passes; otherwise it gets a <code>403</code>. A route without <code>&#64;GrantedTo</code> is open.
     </p>
 
-    <app-code lang="ts">GrantedTo(...booleanSpecs: BooleanSpec[]): MethodDecorator</app-code>
+    <h3>Logged-in users only</h3>
+    <app-code lang="ts">&#64;Get('profile')
+&#64;GrantedTo(isAuthenticated())
+profile() &#123;&#125;</app-code>
 
-    <h3>The rule</h3>
-    <ul>
-      <li>No <code>&#64;GrantedTo</code> on a handler → the route is <strong>open</strong>.</li>
-      <li>
-        <code>&#64;GrantedTo(a, b, c)</code> → the request passes only if <strong>every</strong> spec
-        returns <code>true</code> (the arguments are implicitly <code>and</code>-ed).
-      </li>
-      <li>
-        When the module is configured with <code>apply: false</code>, the guard short-circuits and lets
-        everything through. See <a routerLink="/configuration">Configuration</a>.
-      </li>
-    </ul>
-
-    <p>
-      On rejection the guard throws a <code>GrantedForbiddenException</code> — a
-      <code>ForbiddenException</code>, so a <strong><code>403 Forbidden</code></strong>. See
-      <em>Denied requests</em> below.
-    </p>
-
-    <h3>Basic — role gate</h3>
+    <h3>A role</h3>
     <app-code lang="ts">&#64;Get('reports')
-&#64;GrantedTo(and(isAuthenticated(), hasRole('ADMIN')))
-reports() &#123; /* ... */ &#125;</app-code>
+&#64;GrantedTo(hasRole('ADMIN'))
+reports() &#123;&#125;</app-code>
+    <p>An implied role counts too: with <code>ADMIN ⇒ USER</code>, an ADMIN passes <code>hasRole('USER')</code>. See <a routerLink="/roles">Roles</a>.</p>
 
-    <h3>Multiple arguments are AND-ed</h3>
-    <p>These two forms are equivalent:</p>
-    <app-code lang="ts">&#64;GrantedTo(isAuthenticated(), hasRole('ADMIN'))
-// same as
-&#64;GrantedTo(and(isAuthenticated(), hasRole('ADMIN')))</app-code>
+    <h3>One role among several</h3>
+    <app-code lang="ts">&#64;GrantedTo(or(hasRole('ADMIN'), hasRole('ACCOUNTANT')))</app-code>
 
-    <h3>Class level — a baseline for every route</h3>
-    <p>
-      <code>&#64;GrantedTo</code> also decorates a <strong>controller class</strong>. The class specs
-      apply to every route in it, and are <strong>merged</strong> with each method's specs — the guard
-      requires <strong>all</strong> of them (class + method) to pass. The class sets a baseline; a method
-      can only tighten it.
-    </p>
+    <h3>Several conditions</h3>
+    <app-code lang="ts">// the arguments must all pass
+&#64;GrantedTo(isAuthenticated(), not(hasRole('SUSPENDED')))</app-code>
+
+    <h3>A whole controller</h3>
     <app-code lang="ts">&#64;Controller('admin')
-&#64;GrantedTo(isAuthenticated())          // baseline: every route requires a logged-in caller
+&#64;GrantedTo(isAuthenticated())   // every route of the controller
 export class AdminController &#123;
   &#64;Get('stats')
-  stats() &#123; /* effective: isAuthenticated() */ &#125;
+  stats() &#123;&#125;                    // logged-in users
 
   &#64;Get('config')
-  &#64;GrantedTo(hasRole('ADMIN'))         // effective: isAuthenticated() AND hasRole('ADMIN')
-  config() &#123; /* ... */ &#125;
+  &#64;GrantedTo(hasRole('ADMIN'))  // logged-in users that are ADMIN
+  config() &#123;&#125;
 &#125;</app-code>
-    <div class="callout warn">
-      Specs are <strong>AND-merged</strong>, so a method cannot <em>loosen</em> a class-level rule (there's
-      no opt-out). If some routes in a controller must stay open, don't annotate the class — secure the
-      individual routes instead.
-    </div>
-
-    <h3>OR between roles</h3>
-    <app-code lang="ts">&#64;Get('billing')
-&#64;GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), hasRole('ACCOUNTANT'))))
-billing() &#123; /* ... */ &#125;</app-code>
-
-    <h3>Owner-or-admin (resource ownership)</h3>
     <p>
-      Roles say <em>who</em> the caller is; they don't say <em>whether the record this request targets is
-      theirs</em>. <code>isUser</code> (and its multi-tenant sibling <code>isTenant</code>) pin a value
-      taken <strong>from the request</strong> — a route param, a query param, or a dotted body path — to
-      the caller's identity, expressing <em>"you may only touch your own resource, unless you're an
-      admin"</em>:
+      A method adds conditions to its controller's, it can't remove them. If a route must stay open, don't put
+      <code>&#64;GrantedTo</code> on the class: put it on each route instead.
     </p>
-    <app-code lang="ts">&#64;Patch('users/:userId/profile')
+
+    <h3>Users may only touch their own data</h3>
+    <p>
+      A logged-in user can change an id in the URL or in the body to reach someone else's data. Roles don't
+      stop that. <code>isUser</code> compares that id with the caller:
+    </p>
+    <app-code lang="ts">// PATCH /users/alice/profile, sent by mallory → 403
+&#64;Patch('users/:userId/profile')
 &#64;GrantedTo(or(hasRole('ADMIN'), isUser('Param', 'userId')))
-updateProfile(&#64;Param('userId') userId: string) &#123; /* ... */ &#125;
+updateProfile() &#123;&#125;
 
+// POST /orders &#123; "customer": &#123; "id": "alice" &#125; &#125;, sent by mallory → 403
 &#64;Post('orders')
-&#64;GrantedTo(and(isAuthenticated(), or(hasRole('ADMIN'), isUser('Body', 'customer.id'))))
-createOrder() &#123; /* ... */ &#125;</app-code>
-    <div class="callout">
-      This is the check that stops <strong>IDOR</strong> — an authenticated user forging an id in the URL
-      or body to reach someone else's data. It's important enough to have its own page, with the attack
-      scenarios spelled out: see <a routerLink="/ownership">Resource ownership &amp; IDOR</a>.
+&#64;GrantedTo(or(hasRole('ADMIN'), isUser('Body', 'customer.id')))
+createOrder() &#123;&#125;</app-code>
+    <div class="callout warn">
+      This checks the id a request names. A route that <em>lists</em> records (<code>GET /orders</code>) must still
+      filter its query by the caller, with <a routerLink="/parameter-decorators"><code>&#64;Username()</code></a>.
     </div>
 
-    <h3>Negation and constants</h3>
-    <app-code lang="ts">// Everyone except a banned role
-&#64;GrantedTo(and(isAuthenticated(), not(hasRole('SUSPENDED'))))
+    <h3>Users may only touch their own tenant</h3>
+    <app-code lang="ts">// POST /tenants/globex/invoices, sent by a user of acme → 403
+&#64;Post('tenants/:tenantId/invoices')
+&#64;GrantedTo(or(hasRole('ADMIN'), isTenant('Param', 'tenantId')))
+createInvoice() &#123;&#125;</app-code>
+    <p>A caller without a tenant is refused. Filter your queries with <a routerLink="/parameter-decorators"><code>&#64;Tenant()</code></a> as well.</p>
 
-// Temporarily lock a route without deleting the handler
-&#64;GrantedTo(isFalse())</app-code>
+    <h3>Reuse a rule</h3>
+    <app-code lang="ts">// security/rules.ts
+export const ownerOrAdmin = (param: string) =&gt; or(hasRole('ADMIN'), isUser('Param', param));
 
-    <h3>Factoring common policies</h3>
-    <p>Specs are plain values — build your own vocabulary once and reuse it:</p>
-    <app-code lang="ts">// security/policies.ts
-import &#123; and, or, hasRole, isAuthenticated, isUser &#125; from '&#64;softwarity/nestjs-granted';
-
-export const adminOnly = and(isAuthenticated(), hasRole('ADMIN'));
-export const ownerOrAdmin = (param: string) =&gt; or(hasRole('ADMIN'), isUser('Param', param));</app-code>
-    <app-code lang="ts">&#64;Delete('users/:userId')
+// users.controller.ts
+&#64;Delete('users/:userId')
 &#64;GrantedTo(ownerOrAdmin('userId'))
-remove() &#123; /* ... */ &#125;</app-code>
+remove() &#123;&#125;</app-code>
 
-    <h3>Denied requests — <code>GrantedForbiddenException</code></h3>
+    <h3>Write your own rule</h3>
+    <app-code lang="ts">import &#123; BooleanSpec &#125; from '&#64;softwarity/nestjs-granted';
+
+export const hasScope = (scope: string): BooleanSpec =&gt; (&#123;
+  id: \`hasScope(\$&#123;scope&#125;)\`, // shown in the 403 details
+  apply: (request, username, roles, tenant) =&gt; (request.header('x-scopes') ?? '').split(' ').includes(scope),
+&#125;);</app-code>
+
+    <h3>All the rules</h3>
+    <table>
+      <thead><tr><th>Rule</th><th>Passes when</th></tr></thead>
+      <tbody>
+        <tr><td><code>isAuthenticated()</code></td><td>the caller is known (not <code>anonymous</code>)</td></tr>
+        <tr><td><code>hasRole('ADMIN')</code></td><td>the caller has the role, directly or <a routerLink="/roles">implied</a></td></tr>
+        <tr><td><code>isUser('Param', 'userId')</code></td><td>the request value is the caller's username — <code>'Param'</code>, <code>'Query'</code> or <code>'Body'</code> (dotted path)</td></tr>
+        <tr><td><code>isTenant('Param', 'tenantId')</code></td><td>the request value is the caller's tenant; refused when the caller has none</td></tr>
+        <tr><td><code>and(a, b, …)</code></td><td>all pass</td></tr>
+        <tr><td><code>or(a, b, …)</code></td><td>one passes</td></tr>
+        <tr><td><code>not(a)</code></td><td><code>a</code> fails</td></tr>
+        <tr><td><code>isTrue()</code> / <code>isFalse()</code></td><td>always / never — e.g. to lock a route</td></tr>
+      </tbody>
+    </table>
+
+    <h3 id="denied">Why did a request get a 403?</h3>
     <p>
-      The caller gets the same bare <code>403</code> NestJS sends for any guard returning
-      <code>false</code> — nothing about the policy leaks:
+      The caller gets a bare <code>403</code>, with nothing about your rules. The details are on the exception —
+      <code>GrantedForbiddenException</code> — for you to log:
     </p>
-    <app-code lang="json">&#123; "statusCode": 403, "message": "Forbidden resource", "error": "Forbidden" &#125;</app-code>
-    <p>
-      The details stay on the exception, for your app to log in its own format — the library logs
-      nothing itself:
-    </p>
-    <ul>
-      <li><code>deniedSpec</code> — <code>id</code> of the first spec that failed, e.g. <code>hasRole(ADMIN)</code>; an <code>and(...)</code> / <code>or(...)</code> is reported whole.</li>
-      <li><code>username</code> — the caller's username.</li>
-      <li><code>roles</code> — the caller's roles after hierarchy expansion and <code>knownRoles</code> filtering: what the specs saw.</li>
-      <li><code>tenant</code> — the caller's tenant, if any.</li>
-    </ul>
     <app-code lang="ts">&#64;Catch(GrantedForbiddenException)
 export class DenialFilter extends BaseExceptionFilter &#123;
   private readonly logger = new Logger('Access');
   catch(e: GrantedForbiddenException, host: ArgumentsHost) &#123;
-    this.logger.debug(\`denied: user=$&#123;e.username&#125; roles=[$&#123;e.roles&#125;] spec=$&#123;e.deniedSpec&#125;\`);
-    super.catch(e, host); // unchanged 403 response
+    // e.g. denied: user=bob roles=[USER] rule=hasRole(ADMIN)
+    this.logger.debug(\`denied: user=\$&#123;e.username&#125; roles=[\$&#123;e.roles&#125;] rule=\$&#123;e.deniedSpec&#125;\`);
+    super.catch(e, host);
   &#125;
 &#125;
 
 // main.ts
 app.useGlobalFilters(new DenialFilter(app.getHttpAdapter()));</app-code>
-    <div class="callout warn">
-      Don't put these details in the response: the required roles and the request fields an ownership
-      check compares tell an attacker what to forge.
-    </div>
+    <p>
+      <code>deniedSpec</code> is the first rule that failed, <code>roles</code> the roles it was checked against
+      (after <a routerLink="/roles">hierarchy and filtering</a>), plus <code>username</code> and <code>tenant</code>.
+    </p>
+    <div class="callout warn">Don't send these details back: they tell an attacker what to forge.</div>
 
-    <div class="callout">
-      <strong>What the guard reads:</strong> <code>username</code>, <code>roles</code>, and — through
-      <code>isTenant</code> — <code>tenant</code>. The <code>tenant</code> check only verifies a
-      <em>requested</em> tenant against the <em>claimed</em> one; you still scope <em>which data</em> an
-      action touches at the data layer with the injected
-      <a routerLink="/parameter-decorators"><code>&#64;Tenant()</code></a> value. If your IdP exposes
-      authorities under a different claim (e.g. <code>groups</code>), map it to roles in the
-      <a routerLink="/info-providers">provider</a> rather than gating on a separate channel.
-    </div>
+    <h3>Turn the checks off, in development or tests</h3>
+    <app-code lang="ts">GrantedModule.forRoot(&#123; apply: process.env['ENFORCE_RBAC'] !== 'false' &#125;)</app-code>
+    <p>Every request gets through; <code>&#64;Username()</code> and the other decorators keep working.</p>
   `,
 })
 export class SecuringEndpointsComponent {}
