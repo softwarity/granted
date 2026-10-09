@@ -176,6 +176,7 @@ export class AppModule &#123;&#125;</app-code>
       <thead><tr><th>Option</th><th>Default</th><th>Notes</th></tr></thead>
       <tbody>
         <tr><td><code>jwksUri</code></td><td>—</td><td>JWK Set URL. Can't be combined with <code>base64Key</code> / <code>pemFile</code>.</td></tr>
+        <tr><td><code>discoveryUris</code></td><td>—</td><td>OpenID discovery document URLs — see <em>Several identity providers</em> below.</td></tr>
         <tr><td><code>algorithm</code></td><td>— (each key's own)</td><td>Optional allowlist: one algorithm or an array.</td></tr>
         <tr><td><code>jwksCacheMaxAge</code></td><td><code>600000</code> (10 min)</td><td>Age, in ms, after which cached keys are re-fetched.</td></tr>
         <tr><td><code>jwksCooldown</code></td><td><code>30000</code> (30 s)</td><td>Minimum delay, in ms, between two fetches.</td></tr>
@@ -186,6 +187,51 @@ export class AppModule &#123;&#125;</app-code>
       <strong>Serve the JWKS over HTTPS.</strong> Whoever controls that response decides which tokens are
       valid.
     </div>
+
+    <h4>Several identity providers — OpenID discovery</h4>
+    <p>
+      To trust several IdPs, list their OpenID discovery documents in <code>discoveryUris</code>. Each document
+      (<code>/.well-known/openid-configuration</code>) gives the IdP's <code>issuer</code> and
+      <code>jwks_uri</code>: nothing else to configure.
+    </p>
+    <app-code lang="ts">new GrantedJwtPrincipalProvider(&#123;
+  discoveryUris: [
+    'http://idp-a.iam:8080/.well-known/openid-configuration',
+    'http://idp-b.iam:8080', // '/.well-known/openid-configuration' is appended
+  ],
+&#125;);</app-code>
+    <ul>
+      <li>
+        <strong>Routed by issuer.</strong> A token is verified only with the keys of the IdP whose
+        <code>issuer</code> is its <code>iss</code> claim: a key of one IdP never validates a token claiming
+        another, and a token whose <code>iss</code> no document announces is rejected. No URL is ever taken
+        from the token.
+      </li>
+      <li>
+        <strong>The document's issuer.</strong> The issuer is the one the document announces, whatever the URL
+        it was fetched from: an IdP reached through an in-cluster address keeps its public issuer.
+      </li>
+      <li>
+        <strong>Cached like the keys.</strong> Documents are fetched on first use, with the same
+        <code>jwksCacheMaxAge</code>, <code>jwksCooldown</code> and <code>jwksTimeout</code>. When a re-fetched
+        document points to a new <code>jwks_uri</code>, the keys are fetched from there.
+      </li>
+      <li>
+        <strong>Isolated.</strong> An IdP whose document can't be fetched doesn't affect the others: its tokens
+        are anonymous until a retry, after the cooldown, succeeds.
+      </li>
+    </ul>
+    <p>
+      <code>discoveryUris</code> can be combined with <code>jwksUri</code>, for an issuer that publishes no
+      discovery document. <code>issuer</code> is then required — it tells which tokens go to
+      <code>jwksUri</code>'s keys — and applies to <code>jwksUri</code> only. <code>audience</code>, when set,
+      is checked whatever the IdP.
+    </p>
+    <app-code lang="ts">new GrantedJwtPrincipalProvider(&#123;
+  discoveryUris: ['http://idp-a.iam:8080'],
+  jwksUri: 'http://legacy-auth:8080/jwks.json',
+  issuer: 'https://legacy.example.com',
+&#125;);</app-code>
 
     <h4>Issuer and audience — optional</h4>
     <p>
@@ -204,8 +250,10 @@ export class AppModule &#123;&#125;</app-code>
       other apps' tokens with the same keys — Microsoft Entra ID uses the same signing keys for every tenant.
     </p>
     <div class="callout">
-      Both options need a key (<code>base64Key</code>, <code>pemFile</code> or <code>jwksUri</code>): an
-      unverified token could claim any issuer, so the provider refuses the combination at construction.
+      Both options need a key (<code>base64Key</code>, <code>pemFile</code>, <code>jwksUri</code> or
+      <code>discoveryUris</code>): an unverified token could claim any issuer, so the provider refuses the
+      combination at construction. With <code>discoveryUris</code>, each IdP's issuer comes from its discovery
+      document.
     </div>
 
     <h4>Custom claim mapping</h4>
@@ -217,7 +265,8 @@ export class AppModule &#123;&#125;</app-code>
         <tr><td><code>pemFile</code></td><td><code>string</code></td><td>Path to a PEM public key; read once at construction.</td></tr>
         <tr><td><code>base64Key</code></td><td><code>string</code></td><td>Inline PEM public key — alternative to <code>pemFile</code>.</td></tr>
         <tr><td><code>jwksUri</code></td><td><code>string</code></td><td>JWK Set URL — alternative to a PEM, with key rotation. See <em>Keys from a JWKS endpoint</em> above.</td></tr>
-        <tr><td><code>issuer</code></td><td><code>string | string[]</code></td><td>Accepted <code>iss</code>. Not checked when unset.</td></tr>
+        <tr><td><code>discoveryUris</code></td><td><code>string[]</code></td><td>OpenID discovery documents of the IdPs to trust. See <em>Several identity providers</em> above.</td></tr>
+        <tr><td><code>issuer</code></td><td><code>string | string[]</code></td><td>Accepted <code>iss</code>. Not checked when unset. With <code>discoveryUris</code>: applies to <code>jwksUri</code> only, and required with it.</td></tr>
         <tr><td><code>audience</code></td><td><code>string | RegExp | (string | RegExp)[]</code></td><td>Accepted <code>aud</code>. Not checked when unset.</td></tr>
         <tr><td><code>usernameClaim</code></td><td><code>string</code></td><td>Default <code>'sub'</code>. Dotted path allowed.</td></tr>
         <tr><td><code>rolesClaim</code></td><td><code>string</code></td><td>Default <code>'roles'</code>. Dotted path allowed.</td></tr>

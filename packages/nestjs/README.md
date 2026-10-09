@@ -31,6 +31,7 @@ findOrders(@Username() me: string, @Roles() roles: string[]) { /* ... */ }
 - 🔌 **Pluggable principal provider** — HTTP headers (JSON or CSV roles) or a verified JWT
 - 🔑 **JWT verification** with **IdP presets** — RFC 9068/SCIM, Azure AD/Entra, Keycloak, Okta — or a fully custom claim mapping
 - 🔄 **JWKS key rotation** — verification keys fetched from the IdP's JWKS endpoint, cached, and re-fetched when it rotates them; each key verifies with its own algorithm (RSA, ECDSA, EdDSA), nothing to configure
+- 🌐 **Several IdPs via OpenID discovery** — list their `/.well-known/openid-configuration` URLs: each token is verified with the keys of its own issuer
 - 🏢 **Multi-tenant aware** — `@Tenant()` injection plus `isTenant` to block cross-tenant access
 - 🪶 **Tiny & dependency-light** — just `jsonwebtoken`; works on NestJS 10, 11 & 12
 
@@ -327,12 +328,40 @@ For a key published without `alg`, the allowlist also settles which algorithm it
 | Option | Default | Purpose |
 |---|---|---|
 | `jwksUri` | — | JWK Set URL. Can't be combined with `base64Key` / `pemFile`. |
+| `discoveryUris` | — | OpenID discovery document URLs — see [below](#several-identity-providers--openid-discovery). |
 | `algorithm` | — (each key's own) | Optional allowlist: one algorithm or an array. |
 | `jwksCacheMaxAge` | `600000` (10 min) | Keys older than this are re-fetched, so a key the IdP withdrew stops being accepted. |
 | `jwksCooldown` | `30000` (30 s) | Minimum delay between two fetches, so tokens with forged `kid`s can't make the provider hammer the IdP. |
 | `jwksTimeout` | `5000` (5 s) | Timeout of a fetch. |
 
 > If a fetch fails (IdP down, timeout…), the last known keys are kept and a warning is logged; the next attempt waits for the cooldown. Serve the JWKS over HTTPS: whoever controls that response decides which tokens are valid.
+
+#### Several identity providers — OpenID discovery
+
+To trust several IdPs, list their OpenID discovery documents in `discoveryUris`. Each document (`/.well-known/openid-configuration`) gives the IdP's `issuer` and `jwks_uri`: nothing else to configure.
+
+```ts
+new GrantedJwtPrincipalProvider({
+  discoveryUris: [
+    'http://idp-a.iam:8080/.well-known/openid-configuration',
+    'http://idp-b.iam:8080', // '/.well-known/openid-configuration' is appended
+  ],
+});
+```
+
+A token is verified only with the keys of the IdP whose `issuer` is its `iss` claim: a key of one IdP never validates a token claiming another, and a token whose `iss` no document announces is rejected — no URL is ever taken from the token. The issuer is the one the document announces, whatever the URL it was fetched from: an IdP reached through an in-cluster address keeps its public issuer.
+
+Documents are fetched on first use and cached like the keys — same `jwksCacheMaxAge`, `jwksCooldown` and `jwksTimeout`. When a re-fetched document points to a new `jwks_uri`, the keys are fetched from there. An IdP whose document can't be fetched doesn't affect the others: its tokens are anonymous until a retry, after the cooldown, succeeds.
+
+`discoveryUris` can be combined with `jwksUri`, for an issuer that publishes no discovery document. `issuer` is then required — it tells which tokens go to `jwksUri`'s keys — and applies to `jwksUri` only. `audience`, when set, is checked whatever the IdP.
+
+```ts
+new GrantedJwtPrincipalProvider({
+  discoveryUris: ['http://idp-a.iam:8080'],
+  jwksUri: 'http://legacy-auth:8080/jwks.json',
+  issuer: 'https://legacy.example.com',
+});
+```
 
 #### Issuer and audience — optional
 
@@ -346,7 +375,7 @@ GrantedJwtPrincipalProvider.keycloak({
 });
 ```
 
-Worth it when the service can be reached without going through the gateway, or when the IdP signs other apps' tokens with the same keys — Microsoft Entra ID uses the same signing keys for every tenant. Both options need a key (`base64Key`, `pemFile` or `jwksUri`): an unverified token could claim any issuer.
+Worth it when the service can be reached without going through the gateway, or when the IdP signs other apps' tokens with the same keys — Microsoft Entra ID uses the same signing keys for every tenant. Both options need a key (`base64Key`, `pemFile`, `jwksUri` or `discoveryUris`): an unverified token could claim any issuer. With `discoveryUris`, each IdP's issuer comes from its discovery document — see above.
 
 #### Custom claim mapping
 

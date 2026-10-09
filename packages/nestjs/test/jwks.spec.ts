@@ -51,17 +51,22 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
   const keyB = rsaKey('key-b');
   const outsider = rsaKey('outsider');
 
-  // Local IdP stub: serves a mutable JWK Set and counts the fetches.
+  // Local IdP stub: serves a mutable JWK Set and counts the fetches. `routes`
+  // overrides the response of a path: a body, or an HTTP status.
   let published: Record<string, unknown>[];
+  let routes: Record<string, object | number>;
   let status: number;
   let fetches: number;
+  let requested: string[];
   const server = createServer((req, res) => {
     if (req.url === '/hang') {
       return; // never answers — exercises jwksTimeout
     }
     fetches++;
-    res.writeHead(status, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ keys: published }));
+    requested.push(req.url);
+    const route = routes[req.url];
+    res.writeHead(typeof route === 'number' ? route : status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(typeof route === 'object' ? route : { keys: published }));
   });
   let baseUrl: string;
 
@@ -85,8 +90,10 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
 
   beforeEach(() => {
     published = [keyA.jwk];
+    routes = {};
     status = 200;
     fetches = 0;
+    requested = [];
     elapsed = 0;
     jest.spyOn(Date, 'now').mockImplementation(() => realNow() + elapsed);
     warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -352,6 +359,126 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
         expect(await usernameOf(p, sign(ed, { sub: 'alice' }))).toBe('anonymous');
         expect(warnings()).toMatch(/issuer invalid[\s\S]*audience invalid/);
       });
+    });
+  });
+
+  describe('discoveryUris', () => {
+    // Fetched in-cluster, at 127.0.0.1, while the issuers are public URLs.
+    const issuerA = 'https://idp-a.example.com';
+    const issuerB = 'https://login.partner.com/b';
+    const warnings = () => warn.mock.calls.flat().join(' ');
+
+    beforeEach(() => {
+      routes = {
+        '/a/.well-known/openid-configuration': { issuer: issuerA, jwks_uri: `${baseUrl}/a/certs` },
+        '/a/certs': { keys: [keyA.jwk] },
+        '/b/.well-known/openid-configuration': { issuer: issuerB, jwks_uri: `${baseUrl}/b/certs` },
+        '/b/certs': { keys: [keyB.jwk] },
+      };
+    });
+
+    function openid(conf: GrantedJwtPrincipalProviderConfig = {}) {
+      return new GrantedJwtPrincipalProvider({ discoveryUris: [`${baseUrl}/a/.well-known/openid-configuration`, `${baseUrl}/b/.well-known/openid-configuration`], ...conf });
+    }
+
+    it('verifies the tokens of each provider with its own keys, under the issuer its document announces', async () => {
+      const p = openid();
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(requested.sort()).toEqual(['/a/.well-known/openid-configuration', '/a/certs', '/b/.well-known/openid-configuration', '/b/certs']);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('never verifies a token with the keys of another provider than its issuer', async () => {
+      const p = openid();
+      expect(await usernameOf(p, sign(keyA, { sub: 'mallory', iss: issuerB }))).toBe('anonymous');
+      expect(warnings()).toContain('no JWKS key matches the token');
+      expect(requested).not.toContain('/a/certs');
+    });
+
+    it('rejects an unknown issuer without fetching any key, and never fetches a URL from the token', async () => {
+      const p = openid();
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      requested = [];
+      for (const iss of [`${baseUrl}/evil`, undefined]) {
+        expect(await usernameOf(p, sign(keyA, { sub: 'mallory', iss }))).toBe('anonymous');
+      }
+      expect(requested).toEqual([]);
+      expect(warnings()).toContain(`jwt issuer invalid. expected: ${issuerA} or ${issuerB}`);
+    });
+
+    it('takes the URL the document lives under, with or without a trailing slash', async () => {
+      const p = new GrantedJwtPrincipalProvider({ discoveryUris: [`${baseUrl}/a`, `${baseUrl}/b/`] });
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+    });
+
+    it('fetches each document once for concurrent requests', async () => {
+      const p = openid();
+      const names = await Promise.all([1, 2, 3].map(() => usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))));
+      expect(names).toEqual(['alice', 'alice', 'alice']);
+      expect(requested.filter((url) => url === '/a/.well-known/openid-configuration')).toHaveLength(1);
+    });
+
+    it('keeps serving the other providers while one document fails, and retries it after the cooldown', async () => {
+      routes['/b/.well-known/openid-configuration'] = 503;
+      const p = openid();
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('anonymous');
+      expect(warnings()).toContain('OpenID configuration fetch failed');
+      routes['/b/.well-known/openid-configuration'] = { issuer: issuerB, jwks_uri: `${baseUrl}/b/certs` };
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('anonymous');
+      advance(31_000);
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+    });
+
+    it('rejects a document without issuer or jwks_uri', async () => {
+      routes['/a/.well-known/openid-configuration'] = { jwks_uri: `${baseUrl}/a/certs` };
+      expect(await usernameOf(openid(), sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('anonymous');
+      expect(warnings()).toContain('no "issuer" or "jwks_uri" in the response');
+    });
+
+    it('follows the jwks_uri of a re-fetched document', async () => {
+      const p = openid({ jwksCacheMaxAge: 60_000 });
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      routes['/a/.well-known/openid-configuration'] = { issuer: issuerA, jwks_uri: `${baseUrl}/a/certs-2` };
+      routes['/a/certs-2'] = { keys: [outsider.jwk] };
+      advance(61_000);
+      expect(await usernameOf(p, sign(outsider, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(requested).toContain('/a/certs-2');
+    });
+
+    it('verifies from the cache alone when a getter runs without prepare()', async () => {
+      const p = openid();
+      const token = sign(keyA, { sub: 'alice', iss: issuerA });
+      expect(p.getUsernameFromRequest(reqWithToken(token))).toBe('anonymous');
+      expect(fetches).toBe(0);
+      await usernameOf(p, token);
+      expect(p.getUsernameFromRequest(reqWithToken(token))).toBe('alice');
+    });
+
+    it('checks the audience of every provider', async () => {
+      const p = openid({ audience: 'orders-api' });
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB, aud: 'orders-api' }))).toBe('bob');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB, aud: 'billing-api' }))).toBe('anonymous');
+      expect(warnings()).toContain('jwt audience invalid');
+    });
+
+    it('cohabits with jwksUri, whose keys only verify the tokens of its issuer', async () => {
+      published = [outsider.jwk];
+      const p = openid({ jwksUri: `${baseUrl}/jwks.json`, issuer: 'https://gateway.acme' });
+      expect(await usernameOf(p, sign(outsider, { sub: 'carol', iss: 'https://gateway.acme' }))).toBe('carol');
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(await usernameOf(p, sign(outsider, { sub: 'mallory', iss: issuerA }))).toBe('anonymous');
+      expect(await usernameOf(p, sign(keyA, { sub: 'mallory', iss: 'https://gateway.acme' }))).toBe('anonymous');
+    });
+
+    it('refuses an ambiguous configuration at construction', () => {
+      expect(() => openid({ jwksUri: `${baseUrl}/jwks.json` })).toThrow('jwksUri needs an issuer when combined with discoveryUris');
+      expect(() => openid({ issuer: issuerA })).toThrow('issuer applies to jwksUri only');
+      expect(() => openid({ base64Key: 'pem' })).toThrow('discoveryUris cannot be combined');
+      expect(() => openid({ algorithm: 'HS256' })).toThrow('HS256 cannot be used with jwksUri or discoveryUris');
     });
   });
 });
