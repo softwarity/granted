@@ -45,7 +45,7 @@ import { RouterLink } from '@angular/router';
         <tr><td><code>pemFile</code> / <code>base64Key</code></td><td>—</td><td>Public key, as a file or inline PEM.</td></tr>
         <tr><td><code>algorithm</code></td><td><code>'ES256'</code> with a key; each key's own with a JWKS</td><td>With a JWKS, an optional allowlist: <code>['ES256', 'EdDSA']</code>.</td></tr>
         <tr><td><code>jwksUri</code></td><td>—</td><td>JWKS URL. Alongside <code>discoveryUris</code>, needs <code>issuer</code>.</td></tr>
-        <tr><td><code>discoveryUris</code></td><td>—</td><td>IdP URLs, or <code>&#123; uri, bearerTokenFile?, audience?, bypass? &#125;</code>.</td></tr>
+        <tr><td><code>discoveryUris</code></td><td>—</td><td>IdP URLs, or <code>&#123; uri, bearerTokenFile?, audience?, bypass? &#125;</code>, or <code>&#123; issuer, jwksUri, … &#125;</code> to skip the discovery document.</td></tr>
         <tr><td>↳ <code>bearerTokenFile</code></td><td>—</td><td>Token sent to this IdP only, when it wants one (the Kubernetes API server does). Re-read at each fetch.</td></tr>
         <tr><td>↳ <code>audience</code></td><td><code>audience</code></td><td>Accepted <code>aud</code> for this IdP's tokens.</td></tr>
         <tr><td>↳ <code>bypass</code></td><td>—</td><td><code>sub</code> patterns (<code>*</code> = anything) whose tokens from this IdP pass every <code>&#64;GrantedTo</code>.</td></tr>

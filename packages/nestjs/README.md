@@ -459,7 +459,7 @@ Options are read once, at startup — there is no `forRootAsync`. Read your envi
 | `pemFile` / `base64Key` | — | Public key, as a file or inline PEM. |
 | `algorithm` | `'ES256'` with a key; each key's own with a JWKS | With a JWKS, an optional allowlist: `['ES256', 'EdDSA']`. |
 | `jwksUri` | — | JWKS URL. Alongside `discoveryUris`, needs `issuer`. |
-| `discoveryUris` | — | IdP URLs, or `{ uri, bearerTokenFile?, audience?, bypass? }`. |
+| `discoveryUris` | — | IdP URLs, or `{ uri, bearerTokenFile?, audience?, bypass? }`, or `{ issuer, jwksUri, … }` to skip the discovery document. |
 | ↳ `bearerTokenFile` | — | Token sent to this IdP only, when it wants one (the Kubernetes API server does). Re-read at each fetch. |
 | ↳ `audience` | `audience` | Accepted `aud` for this IdP's tokens. |
 | ↳ `bypass` | — | `sub` patterns (`*` = anything) whose tokens from this IdP pass every `@GrantedTo`. |
