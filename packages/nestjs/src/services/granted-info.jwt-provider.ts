@@ -11,10 +11,26 @@ export type JwtAlgorithm = Algorithm | 'EdDSA';
 /** Accepted `aud` value(s), as strings or patterns. */
 export type JwtAudience = string | RegExp | (string | RegExp)[];
 
-/** A `discoveryUris` entry with options: a bearer token to fetch with, its own audience, a bypass. */
+/**
+ * A `discoveryUris` entry with options: a bearer token to fetch with, its own audience, a bypass —
+ * and, when its discovery document can't be followed, its issuer and JWK Set given outright.
+ */
 export interface OpenIdProvider {
-  /** The discovery document URL, or the URL it lives under — as a plain `discoveryUris` entry. */
-  uri: string;
+  /**
+   * The discovery document URL, or the URL it lives under — as a plain `discoveryUris` entry.
+   * Not needed when `issuer` and `jwksUri` are given.
+   */
+  uri?: string;
+  /**
+   * The provider's issuer, given instead of read from its discovery document — with `jwksUri`,
+   * the two together. For a provider whose document announces a `jwks_uri` the caller cannot
+   * reach: the Kubernetes API server announces its internal control-plane address (e.g.
+   * `https://172.20.0.3:6443/openid/v1/jwks`), out of reach of a process run outside the
+   * cluster, whereas `https://kubernetes.default.svc/openid/v1/jwks` serves the same keys.
+   */
+  issuer?: string;
+  /** The provider's JWK Set URL, given instead of read from its discovery document — with `issuer`. */
+  jwksUri?: string;
   /**
    * File holding the token sent as `Authorization: Bearer` to this provider's
    * discovery document and to the `jwks_uri` it announces — never to another
@@ -332,6 +348,13 @@ class DiscoverySource extends JwksSource {
   }
 }
 
+/** An OpenID Provider whose issuer and JWK Set are given: no discovery document is read. */
+function staticSource({ issuer, jwksUri, bearerTokenFile, audience, bypass }: OpenIdProvider, defaultAudience: JwtAudience | undefined, policy: FetchPolicy, parseKeys: (jwks: any) => JwksKey[]): JwksSource {
+  const source = new JwksSource(jwksUri, issuer, audience ?? defaultAudience, policy, parseKeys, bearerTokenFile);
+  source.bypass = (bypass ?? []).map(subjectPattern);
+  return source;
+}
+
 /**
  * Resolves the identity from a verified JWT carried in the
  * `Authorization: Bearer <token>` header.
@@ -370,8 +393,12 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
   constructor(conf: GrantedJwtPrincipalProviderConfig) {
     const discoveryUris = conf.discoveryUris ?? [];
     const providers: OpenIdProvider[] = discoveryUris.map((entry) => (typeof entry === 'string' ? { uri: entry } : entry));
-    if (providers.some(({ uri }) => typeof uri !== 'string' || !uri)) {
-      throw new Error('[nestjs-granted] each discoveryUris entry needs a URL');
+    const given = (value: unknown) => typeof value === 'string' && value !== '';
+    if (providers.some(({ issuer, jwksUri }) => given(issuer) !== given(jwksUri))) {
+      throw new Error('[nestjs-granted] a discoveryUris entry gives issuer and jwksUri together, or neither');
+    }
+    if (providers.some(({ uri, jwksUri }) => !given(uri) && !given(jwksUri))) {
+      throw new Error('[nestjs-granted] each discoveryUris entry needs a URL — or an issuer and a jwksUri');
     }
     if (providers.some(({ bypass }) => bypass && (!Array.isArray(bypass) || bypass.some((pattern) => typeof pattern !== 'string' || !pattern)))) {
       throw new Error("[nestjs-granted] bypass is a list of sub patterns, e.g. ['system:serviceaccount:my-namespace:*']");
@@ -425,7 +452,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
     }
     const policy: FetchPolicy = { maxAge: this.jwksCacheMaxAge, cooldown: this.jwksCooldown, timeout: this.jwksTimeout };
     const parseKeys = (jwks: any) => this.parseJwks(jwks);
-    this.sources = [...(conf.jwksUri ? [new JwksSource(conf.jwksUri, conf.issuer, conf.audience, policy, parseKeys)] : []), ...providers.map((provider) => new DiscoverySource(provider, conf.audience, policy, parseKeys))];
+    this.sources = [...(conf.jwksUri ? [new JwksSource(conf.jwksUri, conf.issuer, conf.audience, policy, parseKeys)] : []), ...providers.map((provider) => (provider.jwksUri ? staticSource(provider, conf.audience, policy, parseKeys) : new DiscoverySource(provider, conf.audience, policy, parseKeys)))];
   }
 
   /** Preset for RFC 9068 / SCIM access tokens. */

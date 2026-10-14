@@ -102,6 +102,23 @@ import { CodeComponent } from '../code/code.component';
         <tr><td>Any other service account (another namespace, a third-party component)</td><td>checked as usual: authenticated, but without any role</td></tr>
       </tbody>
     </table>
+    <p>
+      <strong>A process run outside the cluster</strong> — under a dev tunnel, say — reaches
+      <code>kubernetes.default.svc</code> but not the <code>jwks_uri</code> its document announces: the API server
+      names its internal control-plane address there (e.g. <code>https://172.20.0.3:6443/openid/v1/jwks</code>).
+      Give the issuer and the JWK Set outright instead of the document; the same keys are served at the service
+      address:
+    </p>
+    <app-code lang="ts">&#123;
+  issuer: 'https://kubernetes.default.svc.cluster.local', // the cluster's --service-account-issuer
+  jwksUri: 'https://kubernetes.default.svc/openid/v1/jwks',
+  bearerTokenFile: '/var/run/secrets/kubernetes.io/serviceaccount/token',
+  bypass: ['system:serviceaccount:my-namespace:*'],
+&#125;</app-code>
+    <p>
+      An entry gives <code>issuer</code> and <code>jwksUri</code> together, or neither; with them, no discovery
+      document is read, and <code>bearerTokenFile</code>, <code>audience</code> and <code>bypass</code> work the same.
+    </p>
     <p>On B's pod, trust the cluster CA, which signs the API server certificate:</p>
     <app-code lang="text">env:
   - name: NODE_EXTRA_CA_CERTS

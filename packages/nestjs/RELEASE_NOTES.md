@@ -2,6 +2,15 @@
 
 ## NEXT RELEASE
 
+### New features
+
+- **A `discoveryUris` entry can give its issuer and JWK Set outright: `{ issuer, jwksUri, bearerTokenFile?, audience?, bypass? }`.** No discovery document is read for it. The Kubernetes API server's document announces its internal control-plane address as `jwks_uri` (e.g. `https://172.20.0.3:6443/openid/v1/jwks`), out of reach of a process run outside the cluster — a service under a dev tunnel got every service account token rejected — while `https://kubernetes.default.svc/openid/v1/jwks` serves the same keys. `bearerTokenFile`, `audience` and `bypass` apply as with a discovered entry, and tokens are routed by that issuer. `issuer` and `jwksUri` go together or not at all; `uri` is then optional.
+
+### Internal changes
+
+- `granted-info.jwt-provider.ts`: `OpenIdProvider.uri` optional, `issuer` / `jwksUri` added; such an entry becomes a plain `JwksSource` carrying its token file, audience and bypass.
+- `test/jwks.spec.ts`: no document read, token sent to the given JWK Set only, bypass kept and limited to its tokens, routing by the given issuer, its own audience, issuer and jwksUri required together.
+
 ---
 
 ## 5.5.0

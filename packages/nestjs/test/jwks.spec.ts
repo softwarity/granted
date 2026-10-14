@@ -523,6 +523,60 @@ describe('GrantedJwtPrincipalProvider — JWKS', () => {
       });
     });
 
+    describe('a provider whose issuer and JWK Set are given', () => {
+      // The Kubernetes API server's case: its document announces a jwks_uri out of reach
+      // (the control plane's internal address), while another URL serves the same keys.
+      const dir = mkdtempSync(join(tmpdir(), 'granted-'));
+      const tokenFile = join(dir, 'token');
+      const service = 'system:serviceaccount:my-namespace:orders';
+
+      beforeEach(() => writeFileSync(tokenFile, 'sa-token-1\n'));
+
+      function given(conf: GrantedJwtPrincipalProviderConfig = {}) {
+        return new GrantedJwtPrincipalProvider({
+          discoveryUris: [`${baseUrl}/b`, { issuer: issuerA, jwksUri: `${baseUrl}/a/certs`, bearerTokenFile: tokenFile, bypass: ['system:serviceaccount:my-namespace:*'] }],
+          ...conf,
+        });
+      }
+
+      it('verifies its tokens with the given JWK Set, reading no discovery document, and sends the token there', async () => {
+        const p = given();
+        expect(await usernameOf(p, sign(keyA, { sub: service, iss: issuerA }))).toBe(service);
+        expect(requested).toContain('/a/certs');
+        expect(requested).not.toContain('/a/.well-known/openid-configuration');
+        expect(authorizations['/a/certs']).toBe('Bearer sa-token-1');
+      });
+
+      it('keeps its bypass, and gives it to its own tokens only', async () => {
+        const p = given();
+        const req = reqWithToken(sign(keyA, { sub: service, iss: issuerA }));
+        await p.prepare(req);
+        expect(p.isBypassed(req)).toBe(true);
+        const other = reqWithToken(sign(keyB, { sub: service, iss: issuerB }));
+        await p.prepare(other);
+        expect(p.isBypassed(other)).toBe(false);
+        expect(authorizations['/b/certs']).toBeUndefined();
+      });
+
+      it('routes by the given issuer: its keys never verify a token claiming another', async () => {
+        const p = given();
+        expect(await usernameOf(p, sign(keyA, { sub: 'mallory', iss: issuerB }))).toBe('anonymous');
+        expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+      });
+
+      it('checks its own audience', async () => {
+        const p = new GrantedJwtPrincipalProvider({ discoveryUris: [{ issuer: issuerA, jwksUri: `${baseUrl}/a/certs`, audience: 'orders-api' }] });
+        expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA, aud: 'orders-api' }))).toBe('alice');
+        expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA, aud: 'billing-api' }))).toBe('anonymous');
+      });
+
+      it('refuses an issuer without a JWK Set, or the reverse', () => {
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ issuer: issuerA }] })).toThrow('issuer and jwksUri together, or neither');
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ jwksUri: `${baseUrl}/a/certs` }] })).toThrow('issuer and jwksUri together, or neither');
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ bearerTokenFile: tokenFile }] })).toThrow('or an issuer and a jwksUri');
+      });
+    });
+
     describe('bypass', () => {
       const service = 'system:serviceaccount:my-namespace:orders';
 

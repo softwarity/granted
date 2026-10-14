@@ -306,6 +306,18 @@ new GrantedJwtPrincipalProvider({
 | A user, through the IdP | `@GrantedTo` checked as usual |
 | A service account of `my-namespace` | passes every `@GrantedTo` — `@Username()` is `system:serviceaccount:my-namespace:orders` |
 | Any other service account (another namespace, a third-party component) | checked as usual: authenticated, but without any role |
+**A process run outside the cluster** — under a dev tunnel, say — reaches `kubernetes.default.svc` but not the `jwks_uri` its document announces: the API server names its internal control-plane address there (e.g. `https://172.20.0.3:6443/openid/v1/jwks`). Give the issuer and the JWK Set outright instead of the document; the same keys are served at the service address:
+
+```ts
+{
+  issuer: 'https://kubernetes.default.svc.cluster.local', // the cluster's --service-account-issuer
+  jwksUri: 'https://kubernetes.default.svc/openid/v1/jwks',
+  bearerTokenFile: '/var/run/secrets/kubernetes.io/serviceaccount/token',
+  bypass: ['system:serviceaccount:my-namespace:*'],
+}
+```
+
+An entry gives `issuer` and `jwksUri` together, or neither; with them, no discovery document is read, and `bearerTokenFile`, `audience` and `bypass` work the same.
 
 On B's pod, trust the cluster CA, which signs the API server certificate:
 
