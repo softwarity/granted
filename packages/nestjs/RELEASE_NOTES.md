@@ -2,6 +2,14 @@
 
 ## NEXT RELEASE
 
+### New features
+
+- **The roles of `@GrantedTo` appear in the OpenAPI document.** With `@nestjs/swagger`, each protected route gets a `security`: one entry per alternative (`or`), listing the roles it requires (`and`) — `or(hasRole('ADMIN'), and(hasRole('MANAGER'), hasRole('AUDIT')))` → `[{ bearer: [ADMIN] }, { bearer: [MANAGER, AUDIT] }]`. Controller and route rules are merged; a branch without a role gives `bearer: []`, `isTrue()` gives `{}`. Each route also gets a `403` response describing the rule in clear — `Forbidden unless: hasRole(ADMIN) or isUser(Param, id)` —, unless the host declared its own; the default `200`/`201` (or the `@HttpCode()`) is kept. Nothing to add on the host side, and no dependency on `@nestjs/swagger`. New option `openApiSecurityScheme` (default `'bearer'`, the name `addBearerAuth()` gives).
+
+### Internal changes
+
+- `security/openapi.ts`: each built-in spec records its role alternatives and its label; `@GrantedTo` registers the routes and `GrantedModule`, once instantiated, writes the `swagger/apiSecurity` and `swagger/apiResponse` metadata of each one, class and method merged. `@nestjs/swagger` added as a devDependency, for the test that generates a real document.
+
 ---
 
 ## 5.6.0

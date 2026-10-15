@@ -192,6 +192,10 @@ GrantedModule.forRoot({ apply: process.env['ENFORCE_RBAC'] !== 'false' })
 
 Every request gets through; `@Username()` and the other decorators keep working.
 
+### OpenAPI
+
+If the service publishes an OpenAPI document (`@nestjs/swagger`), the roles required by each route appear in it, along with a `403` response describing the rule — nothing to add. They are written under the `bearer` scheme, the one `addBearerAuth()` declares; another name goes in `openApiSecurityScheme`.
+
 ---
 
 ## Read the caller
@@ -438,6 +442,7 @@ With both, the hierarchy is applied first: an implied role is kept if it is know
 | `principalProvider` | headers | [Where the identity comes from](#where-the-identity-comes-from). |
 | `roleHierarchy` | — | A role → the roles it implies: [Roles](#roles). |
 | `knownRoles` | all roles kept | The roles to keep: [Roles](#roles). |
+| `openApiSecurityScheme` | `'bearer'` | Scheme the roles are written under in the OpenAPI document: [OpenAPI](#openapi). |
 
 Options are read once, at startup — there is no `forRootAsync`. Read your environment variables or files before, and pass the values.
 

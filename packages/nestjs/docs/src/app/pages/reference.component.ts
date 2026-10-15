@@ -15,6 +15,7 @@ import { RouterLink } from '@angular/router';
         <tr><td><code>principalProvider</code></td><td>headers</td><td>Where the identity comes from: <a routerLink="/info-providers">providers</a>.</td></tr>
         <tr><td><code>roleHierarchy</code></td><td>—</td><td>A role → the roles it implies: <a routerLink="/roles">Roles</a>.</td></tr>
         <tr><td><code>knownRoles</code></td><td>all roles kept</td><td>The roles to keep: <a routerLink="/roles">Roles</a>.</td></tr>
+        <tr><td><code>openApiSecurityScheme</code></td><td><code>'bearer'</code></td><td>Scheme the roles are written under in the OpenAPI document: <a routerLink="/securing-endpoints" fragment="openapi">OpenAPI</a>.</td></tr>
       </tbody>
     </table>
     <div class="callout">

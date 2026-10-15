@@ -130,6 +130,13 @@ app.useGlobalFilters(new DenialFilter(app.getHttpAdapter()));</app-code>
     <h3>Turn the checks off, in development or tests</h3>
     <app-code lang="ts">GrantedModule.forRoot(&#123; apply: process.env['ENFORCE_RBAC'] !== 'false' &#125;)</app-code>
     <p>Every request gets through; <code>&#64;Username()</code> and the other decorators keep working.</p>
+
+    <h3 id="openapi">OpenAPI</h3>
+    <p>
+      If the service publishes an OpenAPI document (<code>&#64;nestjs/swagger</code>), the roles required by each route
+      appear in it, along with a <code>403</code> response describing the rule — nothing to add. They are written under the <code>bearer</code> scheme, the one
+      <code>addBearerAuth()</code> declares; another name goes in <code>openApiSecurityScheme</code>.
+    </p>
   `,
 })
 export class SecuringEndpointsComponent {}

@@ -17,4 +17,10 @@ export class GrantedModuleOptions {
    * `ADMIN` implicitly a `MANAGER` and a `USER`. Leave undefined for no implication.
    */
   roleHierarchy?: Record<string, string[]>;
+  /**
+   * Security scheme the routes' roles are written under in the OpenAPI
+   * document: the name given to `DocumentBuilder.addBearerAuth()` (or
+   * `addSecurity()`). Defaults to `'bearer'`, the name `addBearerAuth()` gives.
+   */
+  openApiSecurityScheme?: string;
 }
