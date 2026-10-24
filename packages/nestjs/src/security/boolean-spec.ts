@@ -20,19 +20,19 @@ export function and(...booleanSpecs: BooleanSpec[]): BooleanSpec {
 }
 // IsTrueSpec
 export function isTrue(): BooleanSpec {
-  return describeSpec({ id: `isTrue()`, apply: (request: Request, username: string, roles: string[]): boolean => true }, [null]);
+  return describeSpec({ id: `isTrue()`, apply: (): boolean => true }, [null]);
 }
 // HasRoleSpec
 export function hasRole(role: string): BooleanSpec {
-  return describeSpec({ id: `hasRole(${role})`, apply: (request: Request, username: string, roles: string[]): boolean => roles.includes(role) }, [[role]]);
+  return describeSpec({ id: `hasRole(${role})`, apply: (_request: Request, _username: string, roles: string[]): boolean => roles.includes(role) }, [[role]]);
 }
 // IsAuthenticatedSpec
 export function isAuthenticated(): BooleanSpec {
-  return { id: `isAuthenticated()`, apply: (request: Request, username: string, roles: string[]): boolean => !!username && username !== 'anonymous' };
+  return { id: `isAuthenticated()`, apply: (_request: Request, username: string): boolean => !!username && username !== 'anonymous' };
 }
 // IsFalseSpec
 export function isFalse(): BooleanSpec {
-  return describeSpec({ id: `isFalse()`, apply: (request: Request, username: string, roles: string[]): boolean => false }, []);
+  return describeSpec({ id: `isFalse()`, apply: (): boolean => false }, []);
 }
 // NotSpec
 export function not(booleanSpec: BooleanSpec): BooleanSpec {
