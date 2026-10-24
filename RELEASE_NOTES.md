@@ -2,6 +2,10 @@
 
 ## NEXT RELEASE
 
+---
+
+## 5.9.0
+
 ### New features
 
 - **`io.softwarity:quarkus-granted` — granted for Quarkus**, a Quarkus extension on Maven Central (`quarkus-granted` and `quarkus-granted-deployment`), under the same version as the NestJS package and with its behaviour. The caller comes from the gateway's headers (`username`, `roles` as a JSON array or a comma-separated list, `tenant`; names configurable) or, with `granted.source=jwt`, from a JWT. granted verifies it itself with every option of nestjs-granted's `GrantedJwtPrincipalProvider` — `granted.jwt.public-key` / `public-key-file` (ES256 by default, HS* with a shared secret), `jwks-uri` (each key verifies with its own algorithm, never the token's; `algorithm` an allowlist; `none` and HS* refused), `discovery-uris[n]` (OpenID Providers routed by `iss`, with `issuer` + `jwks-uri` given outright, `bearer-token-file`, their own `audience`, and `bypass` patterns of `sub` passing every role check), `jwks-cache-max-age` / `jwks-cooldown` / `jwks-timeout`, `issuer`, `audience` (strings or `/patterns/`), the claim paths and the presets (`rfc9068`, `azure-ad`, `keycloak`, `okta`); an invalid token is an anonymous caller — or reads the token quarkus-oidc / quarkus-smallrye-jwt verified, when no key is configured. Roles go through a transitive hierarchy and an optional `known-roles` filter before `@RolesAllowed` sees them. The caller is injected into resource methods — `@GrantedUsername`, `@GrantedRoles`, `@GrantedTenant`, `@GrantedClaim("territories") List<String>` with the conversion its type asks for and `required = true` answering 403 — or read from the request-scoped `GrantedCaller` elsewhere. Every 403 is logged with the rule spelled as nestjs-granted names it (`hasRole(ADMIN) not met by 'bob' (roles: USER)`); the response stays bare unless `granted.access-denied.details=true`. See [quarkus/README.md](./quarkus/README.md).
