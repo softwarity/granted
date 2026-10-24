@@ -2,6 +2,10 @@
 
 ## NEXT RELEASE
 
+---
+
+## 5.10.0
+
 ### New features
 
 - **Quarkus: the JWK Sets of a cluster's own authorities — `granted.jwt.tls-configuration-name`.** Names a configuration of Quarkus's TLS registry (`quarkus.tls.<name>.*`, e.g. `quarkus.tls.cluster.trust-store.pem.certs=${TLS_CA_FILES}`) that every discovery document and JWK Set is fetched with, the bearer-token provider's included; `discovery-uris[n].tls-configuration-name` gives a provider its own. Unset, nothing changes: the JVM's authorities. The host name is always verified. A name the registry doesn't know stops the start, naming the property; so does a configuration trusting every certificate, unless `quarkus.tls.trust-all` is on — anyone on the path could otherwise serve the keys and sign any token. A failed fetch now says what failed in the log: the HTTP status, a TLS handshake, a timeout, a refused connection.
