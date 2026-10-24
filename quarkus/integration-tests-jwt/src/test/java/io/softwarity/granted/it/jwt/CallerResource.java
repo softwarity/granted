@@ -40,6 +40,20 @@ public class CallerResource {
     }
 
     @GET
+    @Path("/user")
+    @RolesAllowed("ROLE_USER")
+    public String user(@GrantedUsername String username) {
+        return username;
+    }
+
+    @GET
+    @Path("/role-admin")
+    @RolesAllowed("ROLE_ADMIN")
+    public String roleAdmin(@GrantedUsername String username) {
+        return username;
+    }
+
+    @GET
     @Path("/stations")
     @RolesAllowed("FORECASTER")
     public List<String> stations(@GrantedClaim("territories") List<String> territories) {

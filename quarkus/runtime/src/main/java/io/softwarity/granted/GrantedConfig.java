@@ -140,6 +140,15 @@ public interface GrantedConfig {
 
         /** Accepted {@code aud}: strings, or patterns between slashes ({@code /^orders-/}). Not checked when unset. */
         Optional<List<String>> audience();
+
+        /**
+         * Name of a configuration of Quarkus's TLS registry ({@code quarkus.tls.<name>.*}) that the
+         * discovery documents and JWK Sets are fetched with - e.g. a trust store holding the cluster's
+         * CA. Unset: the JVM's trusted authorities. A provider can name its own. The host name is
+         * always verified; a configuration trusting all certificates is refused unless
+         * {@code quarkus.tls.trust-all} is on.
+         */
+        Optional<String> tlsConfigurationName();
     }
 
     /** Claim mappings of well-known identity providers - nestjs-granted's presets. */
@@ -183,6 +192,17 @@ public interface GrantedConfig {
          * role check - e.g. {@code system:serviceaccount:my-namespace:*}.
          */
         Optional<List<String>> bypass();
+
+        /** The TLS configuration this provider is fetched with, in place of {@code granted.jwt.tls-configuration-name}. */
+        Optional<String> tlsConfigurationName();
+
+        /**
+         * Whether the {@code granted-jwks} readiness check waits for this provider's keys. Off for a
+         * provider whose outage must not take the service out of its users' traffic - the
+         * Kubernetes API server, whose keys only verify service accounts.
+         */
+        @WithDefault("true")
+        boolean readiness();
     }
 
     interface AccessDenied {

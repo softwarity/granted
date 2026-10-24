@@ -30,6 +30,11 @@
             <artifactId>quarkus-rest-jackson</artifactId>
         </dependency>
         <!-- No quarkus-oidc, no smallrye-jwt: granted verifies the token itself. -->
+        <!-- The granted-jwks readiness check. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-health</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -54,6 +59,12 @@
                     <artifactId>*</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+        <!-- A test CA and the certificates it signs, for an IdP served over HTTPS. -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

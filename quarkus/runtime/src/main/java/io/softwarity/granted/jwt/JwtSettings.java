@@ -19,9 +19,14 @@ import io.softwarity.granted.GrantedConfig;
  * @param providers the OpenID Providers of {@code discovery-uris}
  * @param issuer accepted {@code iss}: of the PEM key's tokens, or of {@code jwksUri}'s
  * @param audience accepted {@code aud}, strings or patterns
+ * @param tls the TLS configuration {@code jwksUri} is fetched with; {@code null} for the JVM's
  */
 public record JwtSettings(List<String> algorithms, String key, String jwksUri, List<ProviderSettings> providers, Policy policy,
-        List<String> issuer, List<Audience> audience) {
+        List<String> issuer, List<Audience> audience, Tls tls) {
+
+    /** A configuration of Quarkus's TLS registry, and the property that named it - for the message when it doesn't exist. */
+    public record Tls(String name, String property) {
+    }
 
     /** What a JWK Set key may verify: asymmetric signatures only - never {@code none}, never a shared-secret HS*. */
     static final List<String> JWKS_ALGORITHMS = List.of("RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384",
@@ -33,9 +38,18 @@ public record JwtSettings(List<String> algorithms, String key, String jwksUri, L
     public record Policy(long maxAge, long cooldown, long timeout) {
     }
 
-    /** An OpenID Provider: by its discovery document ({@code uri}), or by {@code issuer} and {@code jwksUri}. */
+    /**
+     * An OpenID Provider: by its discovery document ({@code uri}), or by {@code issuer} and
+     * {@code jwksUri}; fetched with {@code tls} ({@code null}: the JVM's authorities), awaited by
+     * the readiness check unless {@code readiness} is off.
+     */
     public record ProviderSettings(String uri, String issuer, String jwksUri, String bearerTokenFile, List<Audience> audience,
-            List<Pattern> bypass) {
+            List<Pattern> bypass, Tls tls, boolean readiness) {
+
+        /** How the readiness check and the logs name this provider: its issuer when given, else its URL. */
+        public String label() {
+            return issuer != null ? issuer : uri;
+        }
     }
 
     /** An accepted {@code aud}: a string, or a pattern given between slashes ({@code /^orders-/}). */
@@ -120,13 +134,18 @@ public record JwtSettings(List<String> algorithms, String key, String jwksUri, L
         }
         List<Audience> audience = jwt.audience().map(values -> values.stream().map(Audience::of).toList()).orElse(null);
         Policy policy = new Policy(jwt.jwksCacheMaxAge().toMillis(), jwt.jwksCooldown().toMillis(), jwt.jwksTimeout().toMillis());
-        List<ProviderSettings> resolved = providers.stream()
-                .map(provider -> new ProviderSettings(provider.uri().orElse(null), provider.issuer().orElse(null), provider.jwksUri().orElse(null),
-                        provider.bearerTokenFile().orElse(null),
-                        provider.audience().map(values -> values.stream().map(Audience::of).toList()).orElse(audience),
-                        provider.bypass().orElse(List.of()).stream().map(JwtSettings::subjectPattern).toList()))
-                .toList();
-        return new JwtSettings(algorithms, key, jwt.jwksUri().orElse(null), resolved, policy, jwt.issuer().orElse(null), audience);
+        Tls tls = jwt.tlsConfigurationName().map(name -> new Tls(name, "granted.jwt.tls-configuration-name")).orElse(null);
+        List<ProviderSettings> resolved = new java.util.ArrayList<>();
+        for (int i = 0; i < providers.size(); i++) {
+            GrantedConfig.Provider provider = providers.get(i);
+            String property = "granted.jwt.discovery-uris[" + i + "].tls-configuration-name";
+            resolved.add(new ProviderSettings(provider.uri().orElse(null), provider.issuer().orElse(null), provider.jwksUri().orElse(null),
+                    provider.bearerTokenFile().orElse(null),
+                    provider.audience().map(values -> values.stream().map(Audience::of).toList()).orElse(audience),
+                    provider.bypass().orElse(List.of()).stream().map(JwtSettings::subjectPattern).toList(),
+                    provider.tlsConfigurationName().map(name -> new Tls(name, property)).orElse(tls), provider.readiness()));
+        }
+        return new JwtSettings(algorithms, key, jwt.jwksUri().orElse(null), List.copyOf(resolved), policy, jwt.issuer().orElse(null), audience, tls);
     }
 
     /** {@code *} matches any run of characters; everything else is literal. */

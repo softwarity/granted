@@ -32,6 +32,17 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-security</artifactId>
         </dependency>
+        <!-- The SSLContext the discovery documents and JWK Sets are fetched with: granted.jwt.tls-configuration-name. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-tls-registry</artifactId>
+        </dependency>
+        <!-- The granted-jwks readiness check: compiled against, registered only when quarkus-smallrye-health is there. -->
+        <dependency>
+            <groupId>org.eclipse.microprofile.health</groupId>
+            <artifactId>microprofile-health-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
         <!-- Roles and claims sent as a JSON array in a header, and the 403 body. -->
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -56,6 +67,12 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- A test CA and the certificates it signs, for an IdP served over HTTPS. -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

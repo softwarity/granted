@@ -2,8 +2,10 @@ package io.softwarity.granted.jwt;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +23,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.function.LongSupplier;
+
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLException;
 
 import org.jboss.logging.Logger;
 import org.jose4j.json.JsonUtil;
@@ -52,11 +57,23 @@ public final class JwtVerifier {
     public record Verified(Map<String, Object> claims, boolean bypass) {
     }
 
+    /**
+     * A provider as the readiness check sees it: its keys, or why it has none - a status, a TLS
+     * handshake, a timeout. Never a token.
+     */
+    public record ProviderStatus(String label, int keys, String failure) {
+
+        public boolean up() {
+            return keys > 0;
+        }
+    }
+
     private final JwtSettings settings;
 
     private final LongSupplier clock;
 
-    private final HttpClient http;
+    /** The client of each TLS configuration, by name; the JVM's authorities under {@code null}. */
+    private final Map<String, HttpClient> clients = new java.util.HashMap<>();
 
     /** The key of a PEM configuration: a public key, or the HS* secret. */
     private final Key key;
@@ -64,25 +81,55 @@ public final class JwtVerifier {
     /** The JWK Sets to verify with: {@code jwks-uri}'s, then one per provider. Empty with a PEM key. */
     private final List<KeySource> sources;
 
-    public JwtVerifier(JwtSettings settings) {
-        this(settings, System::currentTimeMillis);
+    /**
+     * @param tls the {@code SSLContext} of each TLS configuration the settings name, from Quarkus's
+     *        TLS registry
+     */
+    public JwtVerifier(JwtSettings settings, Map<String, SSLContext> tls) {
+        this(settings, tls, System::currentTimeMillis);
     }
 
-    JwtVerifier(JwtSettings settings, LongSupplier clock) {
+    JwtVerifier(JwtSettings settings, Map<String, SSLContext> tls, LongSupplier clock) {
         this.settings = settings;
         this.clock = clock;
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(settings.policy().timeout())).build();
+        Duration timeout = Duration.ofMillis(settings.policy().timeout());
+        clients.put(null, HttpClient.newBuilder().connectTimeout(timeout).build());
+        // The host name stays verified: the client checks it against the certificate, whatever context it has.
+        tls.forEach((name, context) -> clients.put(name, HttpClient.newBuilder().connectTimeout(timeout).sslContext(context).build()));
         this.key = settings.key() == null ? null : key(settings.key(), settings.algorithms());
         List<KeySource> sources = new ArrayList<>();
         if (settings.jwksUri() != null) {
-            sources.add(new KeySource(settings.jwksUri(), settings.issuer(), settings.audience(), List.of(), null, this, clock));
+            sources.add(new KeySource(settings.jwksUri(), settings.issuer(), settings.audience(), List.of(), null, settings.tls(),
+                    settings.jwksUri(), true, this, clock));
         }
         for (JwtSettings.ProviderSettings provider : settings.providers()) {
             sources.add(provider.jwksUri() != null
-                    ? new KeySource(provider.jwksUri(), List.of(provider.issuer()), provider.audience(), provider.bypass(), provider.bearerTokenFile(), this, clock)
+                    ? new KeySource(provider.jwksUri(), List.of(provider.issuer()), provider.audience(), provider.bypass(), provider.bearerTokenFile(),
+                            provider.tls(), provider.label(), provider.readiness(), this, clock)
                     : new DiscoverySource(provider, this, clock));
         }
         this.sources = List.copyOf(sources);
+    }
+
+    /**
+     * The providers the readiness check waits for, walked as a verification would: the discovery
+     * document, then the JWK Set - through the same cache and cooldown. A source without keys asks
+     * for them as an unknown {@code kid} would: never twice within the cooldown. Blocking.
+     */
+    public List<ProviderStatus> readiness() {
+        return sources.stream().filter(source -> source.readiness).parallel().map(source -> {
+            source.discover();
+            if (source instanceof DiscoverySource && source.issuer == null) {
+                return new ProviderStatus(source.label, 0, source.discoveryFailure());
+            }
+            List<JwksKey> keys = source.keys.get(false);
+            if (keys.isEmpty()) {
+                keys = source.keys.get(true);
+            }
+            String failure = source.keys.lastFailure();
+            return new ProviderStatus(source.label, keys.size(),
+                    keys.isEmpty() ? (failure == null ? "no key in the JWK Set" : "JWK Set: " + failure) : null);
+        }).toList();
     }
 
     JwtSettings settings() {
@@ -260,13 +307,33 @@ public final class JwtVerifier {
         return JsonUtil.parseJson(payload);
     }
 
-    Object fetchJson(String url, String bearerTokenFile) throws IOException, InterruptedException, JoseException {
+    /**
+     * A JSON document over HTTP, with the TLS configuration given. A failure says what kind it is -
+     * the status, a TLS handshake, a timeout, a refused connection - for the log and the readiness
+     * check: never the token.
+     */
+    Object fetchJson(String url, String bearerTokenFile, JwtSettings.Tls tls) throws IOException, InterruptedException, JoseException {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofMillis(settings.policy().timeout())).GET();
         if (bearerTokenFile != null) {
             // Read at every fetch: a projected token is rotated on disk by the kubelet.
             request.header("Authorization", "Bearer " + Files.readString(Path.of(bearerTokenFile)).trim());
         }
-        HttpResponse<String> response = http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response;
+        try {
+            response = clients.get(tls == null ? null : tls.name()).send(request.build(), HttpResponse.BodyHandlers.ofString());
+        } catch (HttpTimeoutException e) {
+            throw new IOException("timeout after " + settings.policy().timeout() + " ms");
+        } catch (SSLException e) {
+            throw new IOException("TLS handshake failed: " + e.getMessage());
+        } catch (ConnectException e) {
+            throw new IOException("connection refused");
+        } catch (IOException e) {
+            // The JDK client wraps a handshake failure in a plain IOException at times.
+            if (e.getCause() instanceof SSLException ssl) {
+                throw new IOException("TLS handshake failed: " + ssl.getMessage());
+            }
+            throw e;
+        }
         if (response.statusCode() < 200 || response.statusCode() > 299) {
             throw new IOException("HTTP " + response.statusCode());
         }

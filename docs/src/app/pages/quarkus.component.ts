@@ -85,7 +85,48 @@ granted.jwt.discovery-uris[1].bearer-token-file=/var/run/secrets/kubernetes.io/s
 granted.jwt.discovery-uris[1].bypass=system:serviceaccount:my-namespace:*</app-code>
     <p>
       <strong>A JWT verified by quarkus-oidc or quarkus-smallrye-jwt</strong> — <code>granted.source=jwt</code>
-      without key material: granted reads the token the extension verified, with the same claim mapping.
+      without key material: granted reads the token the extension verified, with the same claim mapping. With
+      <code>granted.source=jwt</code>, no key material and neither extension, the application refuses to start:
+      every caller would be anonymous.
+    </p>
+
+    <h3>A service of the cluster</h3>
+    <p>
+      The gateway's internal plane and the Kubernetes API server present certificates of the cluster's own
+      authorities, which the JVM doesn't know. Name a configuration of Quarkus's TLS registry: every discovery
+      document and JWK Set is fetched with it — a provider can name its own. The host name is always verified; a
+      configuration trusting every certificate stops the start, unless <code>quarkus.tls.trust-all</code> is on.
+    </p>
+    <app-code lang="properties">granted.source=jwt
+granted.jwt.tls-configuration-name=cluster
+quarkus.tls.cluster.trust-store.pem.certs=&#36;&#123;TLS_CA_FILES&#125;
+granted.jwt.audience=my-service
+
+# The gateway, on its internal plane:
+granted.jwt.discovery-uris[0].uri=https://meerkat-internal.my-namespace.svc
+# The Kubernetes API server: its keys, fetched with the pod's token, verify the service accounts.
+granted.jwt.discovery-uris[1].issuer=https://kubernetes.default.svc.cluster.local
+granted.jwt.discovery-uris[1].jwks-uri=https://kubernetes.default.svc/openid/v1/jwks
+granted.jwt.discovery-uris[1].bearer-token-file=/var/run/secrets/kubernetes.io/serviceaccount/token
+granted.jwt.discovery-uris[1].bypass=system:serviceaccount:my-namespace:*
+granted.jwt.discovery-uris[1].readiness=false
+
+granted.role-hierarchy.ROLE_ADMIN=ROLE_USER</app-code>
+    <p>
+      <code>TLS_CA_FILES</code> lists the PEM files of the authorities, e.g.
+      <code>/etc/tls/ca.crt,/var/run/secrets/kubernetes.io/serviceaccount/ca.crt</code>. The service accounts of
+      <code>my-namespace</code> pass every role check — those of that provider only.
+    </p>
+
+    <h3>Readiness</h3>
+    <p>
+      With <code>quarkus-smallrye-health</code>, granted registers the <code>granted-jwks</code> readiness check:
+      without its providers' keys it refuses every token, so the service isn't ready. It is DOWN while a provider has
+      no key, naming the provider and why — an HTTP status, a TLS handshake, a timeout — and UP with each one's
+      number of keys. It asks what a verification asks, through the same cache, TLS configuration, bearer token and
+      cooldown: probing it never hammers an IdP. A provider with <code>readiness=false</code> is left out — the
+      Kubernetes API server, whose outage must not take the pod out of its users' traffic. With a PEM key there is
+      nothing to fetch: UP. <code>granted.health.enabled=false</code> leaves the check out.
     </p>
 
     <h3>Roles</h3>
@@ -120,6 +161,10 @@ granted.known-roles=ADMIN,MANAGER,USER</app-code>
         <tr><td><code>granted.jwt.discovery-uris[n].bypass</code></td><td>—</td><td><code>sub</code> patterns passing every role check</td></tr>
         <tr><td><code>granted.jwt.jwks-cache-max-age</code> / <code>.jwks-cooldown</code> / <code>.jwks-timeout</code></td><td><code>10M</code> / <code>30S</code> / <code>5S</code></td><td>JWK Set and discovery document fetches</td></tr>
         <tr><td><code>granted.jwt.issuer</code> / <code>.audience</code></td><td>—</td><td>Accepted <code>iss</code> / <code>aud</code>; <code>/pattern/</code> for an audience regex</td></tr>
+        <tr><td><code>granted.jwt.tls-configuration-name</code></td><td>— (the JVM's authorities)</td><td>The <code>quarkus.tls.&lt;name&gt;</code> configuration discovery documents and JWK Sets are fetched with</td></tr>
+        <tr><td><code>granted.jwt.discovery-uris[n].tls-configuration-name</code></td><td><code>granted.jwt.tls-configuration-name</code></td><td>This provider's own</td></tr>
+        <tr><td><code>granted.jwt.discovery-uris[n].readiness</code></td><td><code>true</code></td><td>Whether <code>granted-jwks</code> waits for this provider's keys</td></tr>
+        <tr><td><code>granted.health.enabled</code></td><td><code>true</code></td><td>The <code>granted-jwks</code> readiness check, with <code>quarkus-smallrye-health</code> (build time)</td></tr>
         <tr><td><code>granted.role-hierarchy.&lt;ROLE&gt;</code></td><td>—</td><td>The roles it implies</td></tr>
         <tr><td><code>granted.known-roles</code></td><td>— (every role kept)</td><td>The roles this service knows</td></tr>
         <tr><td><code>granted.access-denied.details</code></td><td><code>false</code></td><td>The reason of a 403 in the response too</td></tr>

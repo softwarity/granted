@@ -22,15 +22,28 @@ class KeySource {
     /** {@code sub} patterns whose tokens pass every role check. */
     final List<Pattern> bypass;
 
+    /** How the readiness check names this source. */
+    final String label;
+
+    /** Whether the readiness check waits for this source's keys. */
+    final boolean readiness;
+
     KeySource(String jwksUri, List<String> issuer, List<Audience> audience, List<Pattern> bypass, String bearerTokenFile,
-            JwtVerifier verifier, LongSupplier clock) {
+            JwtSettings.Tls tls, String label, boolean readiness, JwtVerifier verifier, LongSupplier clock) {
         this.jwksUri = jwksUri;
         this.issuer = issuer;
         this.audience = audience;
         this.bypass = bypass;
+        this.label = label;
+        this.readiness = readiness;
         this.keys = new Fetched<>(List.of(), verifier.settings().policy(),
-                () -> verifier.parseJwks(verifier.fetchJson(this.jwksUri, bearerTokenFile)),
+                () -> verifier.parseJwks(verifier.fetchJson(this.jwksUri, bearerTokenFile, tls)),
                 () -> "JWKS fetch failed (" + this.jwksUri + ")", clock);
+    }
+
+    /** Why this source has no issuer yet - only a discovery document can lack one. */
+    String discoveryFailure() {
+        return null;
     }
 
     /** Brings {@code issuer} and {@code jwksUri} up to date - nothing to do when they are configured. */

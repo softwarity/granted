@@ -97,7 +97,7 @@ class JwtVerifierTest {
     }
 
     JwtVerifier verifier(Config config) {
-        return new JwtVerifier(JwtSettings.of(config), () -> System.currentTimeMillis() + elapsed.get());
+        return new JwtVerifier(JwtSettings.of(config), Map.of(), () -> System.currentTimeMillis() + elapsed.get());
     }
 
     Config jwksConfig() {

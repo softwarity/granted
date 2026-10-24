@@ -35,6 +35,9 @@ final class Fetched<T> {
     /** Fetch in progress, shared by concurrent callers. */
     private CompletableFuture<T> pending;
 
+    /** Why the last fetch failed; {@code null} once one succeeds. */
+    private volatile String lastFailure;
+
     Fetched(T initial, JwtSettings.Policy policy, Callable<T> load, Supplier<String> failure, LongSupplier clock) {
         this.value = initial;
         this.policy = policy;
@@ -46,6 +49,11 @@ final class Fetched<T> {
     /** The last known value, without fetching. */
     T value() {
         return value;
+    }
+
+    /** Why the last fetch failed - a status, a TLS handshake, a timeout; {@code null} once one succeeds. */
+    String lastFailure() {
+        return lastFailure;
     }
 
     T get(boolean force) {
@@ -77,9 +85,11 @@ final class Fetched<T> {
                 value = loaded;
                 fetchedAt = clock.getAsLong();
             }
+            lastFailure = null;
             result = loaded;
         } catch (Exception e) {
-            LOG.warnf("[quarkus-granted] %s: %s", failure.get(), e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            lastFailure = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+            LOG.warnf("[quarkus-granted] %s: %s", failure.get(), lastFailure);
             result = value;
         }
         synchronized (this) {

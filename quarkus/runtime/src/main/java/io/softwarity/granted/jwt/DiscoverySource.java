@@ -17,10 +17,11 @@ final class DiscoverySource extends KeySource {
     private final Fetched<Configuration> configuration;
 
     DiscoverySource(ProviderSettings provider, JwtVerifier verifier, LongSupplier clock) {
-        super(null, null, provider.audience(), provider.bypass(), provider.bearerTokenFile(), verifier, clock);
+        super(null, null, provider.audience(), provider.bypass(), provider.bearerTokenFile(), provider.tls(), provider.label(),
+                provider.readiness(), verifier, clock);
         String discoveryUri = openidConfigurationUrl(provider.uri());
         this.configuration = new Fetched<>(null, verifier.settings().policy(), () -> {
-            Object document = verifier.fetchJson(discoveryUri, provider.bearerTokenFile());
+            Object document = verifier.fetchJson(discoveryUri, provider.bearerTokenFile(), provider.tls());
             Object issuer = document instanceof Map<?, ?> map ? map.get("issuer") : null;
             Object jwksUri = document instanceof Map<?, ?> map ? map.get("jwks_uri") : null;
             if (!(issuer instanceof String i) || i.isEmpty() || !(jwksUri instanceof String j) || j.isEmpty()) {
@@ -46,6 +47,12 @@ final class DiscoverySource extends KeySource {
             keys.expire();
         }
         issuer = List.of(current.issuer());
+    }
+
+    @Override
+    String discoveryFailure() {
+        String failure = configuration.lastFailure();
+        return failure == null ? "no discovery document fetched yet" : "discovery document: " + failure;
     }
 
     /** No token is routed here until the document has been fetched. */

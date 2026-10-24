@@ -25,7 +25,11 @@ import org.jose4j.jwk.PublicJsonWebKey;
 import org.jose4j.jws.JsonWebSignature;
 import org.jose4j.keys.HmacKey;
 
+import javax.net.ssl.SSLContext;
+
 import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpsConfigurator;
+import com.sun.net.httpserver.HttpsServer;
 
 import io.softwarity.granted.GrantedConfig;
 
@@ -159,8 +163,23 @@ final class JwtTestSupport {
 
         final Map<String, List<String>> authorizations = new ConcurrentHashMap<>();
 
+        /** {@code http://127.0.0.1}, or {@code https://<host>} when serving TLS. */
+        private final String origin;
+
         Idp() throws IOException {
-            server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            this(null, null);
+        }
+
+        /** Over HTTPS, presenting the certificate of {@code tls}, reached as {@code host}. */
+        Idp(SSLContext tls, String host) throws IOException {
+            if (tls == null) {
+                server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            } else {
+                HttpsServer https = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+                https.setHttpsConfigurator(new HttpsConfigurator(tls));
+                server = https;
+            }
+            origin = (tls == null ? "http://127.0.0.1" : "https://" + host) + ":" + server.getAddress().getPort();
             server.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
             server.createContext("/", exchange -> {
                 String path = exchange.getRequestURI().getPath();
@@ -193,7 +212,7 @@ final class JwtTestSupport {
         }
 
         String url(String path) {
-            return "http://127.0.0.1:" + server.getAddress().getPort() + path;
+            return origin + path;
         }
 
         int fetches(String path) {
@@ -224,6 +243,7 @@ final class JwtTestSupport {
         Duration timeout = Duration.ofSeconds(5);
         List<String> issuer;
         List<String> audience;
+        String tlsConfigurationName;
 
         Config provider(Provider provider) {
             discoveryUris.add(provider);
@@ -299,6 +319,11 @@ final class JwtTestSupport {
         public Optional<List<String>> audience() {
             return Optional.ofNullable(audience);
         }
+
+        @Override
+        public Optional<String> tlsConfigurationName() {
+            return Optional.ofNullable(tlsConfigurationName);
+        }
     }
 
     /** A {@code granted.jwt.discovery-uris[n]} entry. */
@@ -310,6 +335,8 @@ final class JwtTestSupport {
         String bearerTokenFile;
         List<String> audience;
         List<String> bypass;
+        String tlsConfigurationName;
+        boolean readiness = true;
 
         static Provider uri(String uri) {
             Provider provider = new Provider();
@@ -345,6 +372,16 @@ final class JwtTestSupport {
         @Override
         public Optional<List<String>> bypass() {
             return Optional.ofNullable(bypass);
+        }
+
+        @Override
+        public Optional<String> tlsConfigurationName() {
+            return Optional.ofNullable(tlsConfigurationName);
+        }
+
+        @Override
+        public boolean readiness() {
+            return readiness;
         }
     }
 

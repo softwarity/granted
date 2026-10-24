@@ -2,6 +2,19 @@
 
 ## NEXT RELEASE
 
+### New features
+
+- **Quarkus: the JWK Sets of a cluster's own authorities — `granted.jwt.tls-configuration-name`.** Names a configuration of Quarkus's TLS registry (`quarkus.tls.<name>.*`, e.g. `quarkus.tls.cluster.trust-store.pem.certs=${TLS_CA_FILES}`) that every discovery document and JWK Set is fetched with, the bearer-token provider's included; `discovery-uris[n].tls-configuration-name` gives a provider its own. Unset, nothing changes: the JVM's authorities. The host name is always verified. A name the registry doesn't know stops the start, naming the property; so does a configuration trusting every certificate, unless `quarkus.tls.trust-all` is on — anyone on the path could otherwise serve the keys and sign any token. A failed fetch now says what failed in the log: the HTTP status, a TLS handshake, a timeout, a refused connection.
+- **Quarkus: the `granted-jwks` readiness check.** Registered when `quarkus-smallrye-health` is present (`granted.health.enabled=false`, at build time, leaves it out). DOWN while a provider has no key, naming the provider and why — never a token; UP with each provider's number of keys. It asks what a verification asks, through the same cache, TLS configuration, bearer token and cooldown, so probing it never hammers an IdP. `discovery-uris[n].readiness=false` leaves a provider out — the Kubernetes API server, whose outage must not take the pod out of its users' traffic. With a PEM key there is nothing to fetch: UP. It replaces the `JwksReadinessCheck` each service wrote.
+
+### Changes
+
+- **Quarkus: `granted.source=jwt` with nothing to verify the token now stops the start.** No key material (`public-key`, `public-key-file`, `jwks-uri`, `discovery-uris`) and neither quarkus-oidc nor quarkus-smallrye-jwt: the application used to start and treat every caller as anonymous, every protected route answering 401 without a word in the logs.
+
+### Internal changes
+
+- Quarkus tests: an IdP over HTTPS with a certificate of a test authority (BouncyCastle, test scope) — trusted or not, a host name that doesn't match, a provider's own TLS configuration; the readiness check (DOWN, UP, `readiness=false`, one fetch per cooldown however often it is probed); a canopy service's configuration end to end. The extension's own tests (`deployment`, `QuarkusExtensionTest`): what stops the start, the readiness check registered or left out, a parameter type `@GrantedClaim` can't fill failing the build.
+
 ---
 
 ## 5.9.0

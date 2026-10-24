@@ -101,17 +101,37 @@ granted.jwt.jwks-uri=https://sso.example.com/realms/acme/protocol/openid-connect
 
 #### Several OpenID Providers — `discovery-uris`
 
+A service of a Kubernetes cluster, behind its gateway — the gateway's internal plane and the API server present certificates of the cluster's own authorities:
+
 ```properties
-granted.jwt.discovery-uris[0].uri=https://gateway.example.com
-# The Kubernetes API server: issuer and JWK Set given, a bearer token to fetch them,
-# and the service accounts of the namespace passing every role check.
+granted.source=jwt
+granted.jwt.tls-configuration-name=cluster
+quarkus.tls.cluster.trust-store.pem.certs=/etc/tls/ca.crt,/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+granted.jwt.audience=my-service
+
+# The gateway, on its internal plane.
+granted.jwt.discovery-uris[0].uri=https://meerkat-internal.my-namespace.svc
+# The Kubernetes API server: issuer and JWK Set given, the pod's token to fetch them,
+# the service accounts of the namespace passing every role check - and its outage
+# not taking the pod out of its users' traffic.
 granted.jwt.discovery-uris[1].issuer=https://kubernetes.default.svc.cluster.local
 granted.jwt.discovery-uris[1].jwks-uri=https://kubernetes.default.svc/openid/v1/jwks
 granted.jwt.discovery-uris[1].bearer-token-file=/var/run/secrets/kubernetes.io/serviceaccount/token
 granted.jwt.discovery-uris[1].bypass=system:serviceaccount:my-namespace:*
+granted.jwt.discovery-uris[1].readiness=false
+
+granted.role-hierarchy.ROLE_ADMIN=ROLE_USER
 ```
 
-Each provider's discovery document gives its issuer and JWK Set. A token is verified only with the keys of the provider whose issuer is its `iss`; any other `iss` is rejected, and no URL is ever taken from the token. A bearer token file goes to that provider only, read again at every fetch. A `bypass` pattern (`*` matches anything) lets that provider's matching tokens pass every role and permission check — named by their `sub` — and no other provider's.
+Each provider's discovery document gives its issuer and JWK Set. A token is verified only with the keys of the provider whose issuer is its `iss`; any other `iss` is rejected, and no URL is ever taken from the token. A bearer token file goes to that provider only, read again at every fetch. A `bypass` pattern (`*` matches anything) lets that provider's matching tokens pass every role and permission check — named by their `sub` — and no other provider's. The audience applies to every provider: a service account calls with a token projected for it (a `serviceAccountToken` volume), not its default one.
+
+#### TLS — the cluster's authorities
+
+`granted.jwt.tls-configuration-name` names a configuration of [Quarkus's TLS registry](https://quarkus.io/guides/tls-registry-reference) (`quarkus.tls.<name>.*`): every discovery document and JWK Set is fetched with it, the bearer-token provider's included. A provider can name its own with `discovery-uris[n].tls-configuration-name` — one on a private authority, another on the public ones. Unset: the JVM's authorities.
+
+- A name the registry doesn't know stops the start, naming the property that gave it.
+- The host name is always verified against the certificate.
+- A configuration trusting every certificate (`quarkus.tls.<name>.trust-all=true`) stops the start: anyone on the path could serve the keys, and so sign any token. Set `quarkus.tls.trust-all=true` too if that is meant — in development only.
 
 #### Issuer and audience
 
@@ -125,6 +145,18 @@ Not checked when unset. An audience between slashes is a pattern. A discovery pr
 ### A JWT, verified by quarkus-oidc or quarkus-smallrye-jwt
 
 `granted.source=jwt` without key material: add and configure one of them as usual; granted reads the token it verified — the `*-claim` options and the preset apply, and the roles of `roles-claim` are added to those the extension mapped itself.
+
+With `granted.source=jwt`, no key material and neither extension, the application refuses to start: every caller would be anonymous, and every protected route would answer 401 without a word in the logs.
+
+## Readiness — `granted-jwks`
+
+With `quarkus-smallrye-health`, granted registers the `granted-jwks` readiness check: without its providers' keys it refuses every token, so the service isn't ready to serve.
+
+- **DOWN** while a provider has no key, naming the provider and why — `JWK Set: HTTP 503`, `discovery document: TLS handshake failed: …`, `JWK Set: timeout after 5000 ms`; never a token. **UP** with each provider's number of keys.
+- It asks what a verification asks, through the same cache, TLS configuration, bearer token and cooldown: probing `/q/health/ready` in a loop never makes granted fetch more than once per `jwks-cooldown`. A provider without keys yet is fetched as an unknown `kid` would have it.
+- A provider with `discovery-uris[n].readiness=false` is left out — the Kubernetes API server, whose keys only verify service accounts: its outage must not take the pod out of its users' traffic. `jwks-uri` given alone is waited for too.
+- With a PEM key, or when granted doesn't verify the token itself, there is nothing to fetch: UP.
+- `granted.health.enabled=false` (build time) leaves the check out.
 
 ## Roles
 
@@ -169,8 +201,14 @@ An anonymous caller on a protected route gets a `401`, as Quarkus answers it.
 | `granted.jwt.jwks-timeout` | `5S` | Timeout of a fetch |
 | `granted.jwt.issuer` | — | Accepted `iss` (a list) |
 | `granted.jwt.audience` | — | Accepted `aud` (a list; `/pattern/` for a regex) |
+| `granted.jwt.tls-configuration-name` | — (the JVM's authorities) | The `quarkus.tls.<name>` configuration discovery documents and JWK Sets are fetched with |
+| `granted.jwt.discovery-uris[n].tls-configuration-name` | `granted.jwt.tls-configuration-name` | This provider's own |
+| `granted.jwt.discovery-uris[n].readiness` | `true` | Whether `granted-jwks` waits for this provider's keys |
+| `granted.health.enabled` | `true` | The `granted-jwks` readiness check, with `quarkus-smallrye-health` (build time) |
 | `granted.role-hierarchy.<ROLE>` | — | The roles `<ROLE>` implies |
 | `granted.known-roles` | — (every role kept) | The roles this service knows |
 | `granted.access-denied.details` | `false` | The reason of a 403 in the response too |
 
-A configuration that could only look secure — an issuer without a key, a JWK Set with HS256, `discovery-uris` with a PEM key — stops the application at startup.
+A configuration that could only look secure — an issuer without a key, a JWK Set with HS256, `discovery-uris` with a PEM key, a TLS configuration that doesn't exist or trusts every certificate, `granted.source=jwt` with nothing to verify the token — stops the application at startup.
+
+In a native image, the `SSLContext` comes from the TLS registry and the extension declares SSL support: nothing is registered for reflection.
