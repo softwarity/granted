@@ -29,10 +29,10 @@ for (const dir of ['packages/nestjs'].filter((path) => existsSync(join(path, 'pa
   console.log(`${manifest.name} → ${version}`);
 }
 
-// The Quarkus library, a Maven reactor: the parent's version and the one each module names as
+// The Quarkus extension, a Maven reactor (runtime, deployment, and the test applications): the parent's version and the one each module names as
 // its parent. Only those - the first <version> of the parent pom, and the one inside <parent> -
 // so a dependency's version is never touched.
-for (const pom of ['quarkus/pom.xml', 'quarkus/runtime/pom.xml'].filter((path) => existsSync(path))) {
+for (const pom of ['quarkus/pom.xml', 'quarkus/runtime/pom.xml', 'quarkus/deployment/pom.xml', 'quarkus/integration-tests/pom.xml', 'quarkus/integration-tests-jwt/pom.xml'].filter((path) => existsSync(path))) {
   const before = readFileSync(pom, 'utf8');
   const after =
     pom === 'quarkus/pom.xml'
@@ -44,4 +44,14 @@ for (const pom of ['quarkus/pom.xml', 'quarkus/runtime/pom.xml'].filter((path) =
   }
   writeFileSync(pom, after);
   console.log(`${pom} → ${version}`);
+}
+
+// The Go module's path carries its major version from v2 on (`…/go/v5`), as Go
+// requires: a major release changes it. Its imports are its own package only.
+if (existsSync('go/go.mod')) {
+  const major = Number(version.split('.')[0]);
+  const before = readFileSync('go/go.mod', 'utf8');
+  const after = before.replace(/^module github\.com\/softwarity\/granted\/go(\/v\d+)?$/m, `module github.com/softwarity/granted/go${major >= 2 ? `/v${major}` : ''}`);
+  writeFileSync('go/go.mod', after);
+  console.log(`go/go.mod → ${after.match(/^module .*$/m)[0]}`);
 }

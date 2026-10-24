@@ -23,7 +23,7 @@ A gateway or an identity provider has authenticated the caller and passes the id
 // NestJS
 @Get('stations')
 @GrantedTo(hasRole('FORECASTER'))
-list(@Claim('territories', { type: 'string', array: true }) territories: string[]) {
+list(@GrantedClaim('territories', { type: 'string', array: true }) territories: string[]) {
   return this.stations.find({ where: { territory: In(territories) } });
 }
 ```
@@ -33,6 +33,8 @@ Roles decide *which actions* a caller may take; claims scope *which data*.
 | Package | |
 |---|---|
 | [`@softwarity/nestjs-granted`](./packages/nestjs) | NestJS |
+| [`io.softwarity:quarkus-granted`](./quarkus) | Quarkus |
+| [`github.com/softwarity/granted/go/v5`](./go) | Go (`net/http`) |
 
 Every package carries one version: they implement the same behaviour, so a service in one language and a service in another, on the same number, decide the same way.
 

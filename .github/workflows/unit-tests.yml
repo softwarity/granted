@@ -28,3 +28,38 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  quarkus:
+    name: Quarkus
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: quarkus
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: ./mvnw -B verify
+
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: go
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          # jwx v3 needs Go 1.25: the version comes from go.mod, not from here.
+          go-version-file: go/go.mod
+          # The module is in go/, so its checksum file is not at the root where
+          # the cache looks by default.
+          cache-dependency-path: go/go.sum
+      - run: go vet ./...
+      - run: go test -race ./...

@@ -1,18 +1,17 @@
 import { Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { CodeComponent } from '../code/code.component';
 
 @Component({
   selector: 'app-quarkus',
-  imports: [CodeComponent, RouterLink],
+  imports: [CodeComponent],
   template: `
     <h2>Quarkus</h2>
     <div class="callout">Published with the next release of granted, alongside the NestJS package.</div>
     <p>
-      <strong>io.softwarity:quarkus-granted</strong> is a Quarkus extension. It reads the caller the way
-      nestjs-granted does — from the gateway's headers or from a verified JWT, with the same options — shapes its
-      roles with a hierarchy, explains every refusal in the log, and hands your resources the caller as method
-      parameters. The rules are the ones Quarkus already has: <code>&#64;RolesAllowed</code>,
+      <strong>io.softwarity:quarkus-granted</strong> is a Quarkus extension with the behaviour of nestjs-granted:
+      the caller from the gateway's headers or from a JWT — verified by granted itself, or by quarkus-oidc /
+      quarkus-smallrye-jwt — its roles shaped by a hierarchy, injected into your resource methods, every refusal
+      explained in the log. The rules are the ones Quarkus already has — <code>&#64;RolesAllowed</code>,
       <code>&#64;Authenticated</code>, <code>&#64;PermitAll</code>, <code>&#64;DenyAll</code>.
     </p>
 
@@ -20,109 +19,113 @@ import { CodeComponent } from '../code/code.component';
     <app-code lang="xml">&lt;dependency&gt;
     &lt;groupId&gt;io.softwarity&lt;/groupId&gt;
     &lt;artifactId&gt;quarkus-granted&lt;/artifactId&gt;
-    &lt;version&gt;&lt;!-- the version of every granted package --&gt;&lt;/version&gt;
+    &lt;version&gt;5.8.0&lt;/version&gt;
 &lt;/dependency&gt;</app-code>
-    <p>
-      Quarkus 3.40, Java 21. Its version is the one every granted package carries.
-    </p>
+    <p>Quarkus 3.40, Java 21. Quarkus picks up <code>quarkus-granted-deployment</code> by itself.</p>
 
     <h3>Read the caller</h3>
-    <app-code lang="java">&#64;Path("/stations")
-public class StationResource &#123;
+    <app-code lang="java">&#64;GET
+&#64;RolesAllowed("FORECASTER")
+public List&lt;Station&gt; list(&#64;GrantedClaim("territories") List&lt;String&gt; territories) &#123;
+    return Station.list("territory in ?1", territories);
+&#125;
 
-    &#64;GET
-    &#64;RolesAllowed("FORECASTER")
-    public List&lt;Station&gt; list(&#64;GrantedClaim("territories") List&lt;String&gt; territories) &#123;
-        return Station.list("territory in ?1", territories);
-    &#125;
+&#64;GET
+&#64;Path("/me")
+public Me me(&#64;GrantedUsername String username, &#64;GrantedRoles Set&lt;String&gt; roles, &#64;GrantedTenant String tenant) &#123;
+    return new Me(username, roles, tenant);
 &#125;</app-code>
     <table>
-      <thead><tr><th>Parameter</th><th>Gives</th><th>When the caller has none</th></tr></thead>
+      <thead><tr><th>Parameter</th><th>Type</th><th>When the caller has none</th></tr></thead>
       <tbody>
-        <tr><td><code>&#64;GrantedUsername String</code></td><td>the username</td><td><code>"anonymous"</code></td></tr>
-        <tr><td><code>&#64;GrantedRoles Set&lt;String&gt;</code></td><td>the roles the rules see, after the hierarchy and <code>known-roles</code></td><td>empty</td></tr>
-        <tr><td><code>&#64;GrantedTenant String</code></td><td>the tenant</td><td><code>null</code></td></tr>
-        <tr><td><code>&#64;GrantedClaim("name") T</code></td><td>any other attribute, converted to the parameter's type — <code>String</code>, <code>Integer</code>, <code>Long</code>, <code>Boolean</code>, or a <code>List</code> of them</td><td><code>null</code>, or an empty list</td></tr>
+        <tr><td><code>&#64;GrantedUsername</code></td><td><code>String</code></td><td><code>"anonymous"</code></td></tr>
+        <tr><td><code>&#64;GrantedRoles</code></td><td><code>Set&lt;String&gt;</code> or <code>List&lt;String&gt;</code> — after the hierarchy and <code>known-roles</code></td><td>empty</td></tr>
+        <tr><td><code>&#64;GrantedTenant</code></td><td><code>String</code></td><td><code>null</code></td></tr>
+        <tr><td><code>&#64;GrantedClaim("name")</code></td><td><code>String</code>, <code>Integer</code>, <code>Long</code>, <code>Double</code>, <code>Boolean</code>, <code>Object</code>, or a <code>List</code> / <code>Set</code> of one of them</td><td><code>null</code>, or an empty list</td></tr>
+        <tr><td><code>&#64;GrantedClaim(value = "name", required = true)</code></td><td>the same — a primitive (<code>int</code>, <code>long</code>…) needs <code>required</code></td><td>a <code>403</code></td></tr>
       </tbody>
     </table>
     <p>
-      Each parameter is read from the request being served — the resource is a singleton, nothing is kept from
-      one call to the next. With a JWT, a claim comes from the <strong>verified</strong> token, never from a
-      header. Claims follow the rules of nestjs-granted's
-      <a routerLink="/nestjs/parameter-decorators"><code>&#64;GrantedClaim</code></a>: a list is a JSON array or a
+      Read for each request, never captured. A parameter of a type the annotation can't fill fails the build.
+      Claims follow the rules of nestjs-granted's <code>&#64;GrantedClaim</code>: a list is a JSON array or a
       comma-separated list, a number or a boolean given as a string converts, a value of the wrong type is treated
-      as missing — in a list, only the elements of the wrong type are dropped — with a warning that never shows
-      the value. <code>&#64;GrantedClaim(value = "territories", required = true)</code> answers <code>403</code>
-      when it is missing.
+      as missing — in a list, only the elements of the wrong type are dropped — with a warning that never shows the
+      value. Outside a resource, inject the request-scoped <code>GrantedCaller</code>:
     </p>
-    <p>Outside a resource — in a service — inject the request-scoped <code>GrantedCaller</code>:</p>
     <app-code lang="java">&#64;Inject
 GrantedCaller caller;
 
 List&lt;String&gt; territories = caller.claims("territories", String.class);
-Optional&lt;Integer&gt; max = caller.claim("maxAmount", Integer.class);</app-code>
+String username = caller.username();
+Optional&lt;Long&gt; max = caller.claim("maxAmount", Long.class);
+List&lt;String&gt; required = caller.requireClaims("territories", String.class); // or a 403</app-code>
 
     <h3>Where the caller comes from</h3>
     <p>
       <strong>Headers from a gateway</strong> — the default. Nothing to configure when the gateway sends
-      <code>username</code>, <code>roles</code> (a JSON array or a comma-separated list, detected) and
-      <code>tenant</code>. Nothing is verified: the service must never be reachable except through the gateway.
+      <code>username</code>, <code>roles</code> (a JSON array or a comma-separated list) and <code>tenant</code>.
+      Nothing is verified: the service must never be reachable except through the gateway.
     </p>
     <app-code lang="properties">granted.headers.username=x-user
 granted.headers.roles=x-roles
 granted.headers.tenant=x-tenant</app-code>
-
     <p>
-      <strong>A JWT</strong> — with every option of nestjs-granted. The signature is verified by
-      <code>quarkus-oidc</code>, configured by granted from these properties; each JWK Set key verifies with its own
-      algorithm, never the one the token announces. A missing or invalid token gives an anonymous caller.
+      <strong>A JWT verified by granted</strong> — <code>granted.source=jwt</code> and key material, every option
+      of nestjs-granted's JWT provider. A missing or invalid token is an anonymous caller; the algorithm always
+      comes from the key, never from the token.
     </p>
-    <app-code lang="properties"># One IdP, by its JWK Set — keys cached, re-fetched when it rotates them
-granted.source=jwt
+    <app-code lang="properties">granted.source=jwt
 granted.jwt.preset=keycloak
-granted.jwt.jwks-uri=https://sso.example.com/realms/acme/protocol/openid-connect/certs
-granted.jwt.issuer=https://sso.example.com/realms/acme
-granted.jwt.audience=orders-api</app-code>
-    <app-code lang="properties"># Several OpenID Providers, each token routed by its iss
-granted.source=jwt
-granted.jwt.discovery-uris[0].uri=http://meerkat.canopy.svc:8080
-# The cluster's own services, calling with their pod's token
+granted.jwt.public-key-file=config/jwt_public_key.pem   # ES256 by default
+# or: granted.jwt.jwks-uri=https://sso.example.com/realms/acme/protocol/openid-connect/certs
+# or several OpenID Providers, routed by the token's iss:
+granted.jwt.discovery-uris[0].uri=https://gateway.example.com
 granted.jwt.discovery-uris[1].issuer=https://kubernetes.default.svc.cluster.local
 granted.jwt.discovery-uris[1].jwks-uri=https://kubernetes.default.svc/openid/v1/jwks
 granted.jwt.discovery-uris[1].bearer-token-file=/var/run/secrets/kubernetes.io/serviceaccount/token
-granted.jwt.discovery-uris[1].bypass=system:serviceaccount:canopy:*</app-code>
-    <table>
-      <thead><tr><th>Property</th><th>nestjs-granted</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><td><code>granted.jwt.public-key</code> / <code>public-key-file</code></td><td><code>base64Key</code> / <code>pemFile</code></td><td>A PEM public key</td></tr>
-        <tr><td><code>granted.jwt.algorithm</code></td><td><code>algorithm</code></td><td>With a PEM key, default <code>ES256</code>. With a JWK Set, an optional allowlist; <code>none</code> and HS* refused</td></tr>
-        <tr><td><code>granted.jwt.jwks-uri</code></td><td><code>jwksUri</code></td><td>The IdP's JWK Set</td></tr>
-        <tr><td><code>granted.jwt.discovery-uris[n].*</code></td><td><code>discoveryUris</code></td><td><code>uri</code>, or <code>issuer</code> + <code>jwks-uri</code>; <code>bearer-token-file</code>, <code>audience</code>, <code>bypass</code></td></tr>
-        <tr><td><code>granted.jwt.jwks-cache-max-age</code> / <code>jwks-cooldown</code> / <code>jwks-timeout</code></td><td>the same</td><td>10 min / 30 s / 5 s</td></tr>
-        <tr><td><code>granted.jwt.issuer</code> / <code>audience</code></td><td><code>issuer</code> / <code>audience</code></td><td>Not checked when unset</td></tr>
-        <tr><td><code>granted.jwt.preset</code></td><td>the presets</td><td><code>rfc9068</code>, <code>azure-ad</code>, <code>keycloak</code>, <code>okta</code></td></tr>
-        <tr><td><code>granted.jwt.username-claim</code> / <code>roles-claim</code> / <code>tenant-claim</code></td><td><code>usernameClaim</code> / <code>rolesClaim</code> / <code>tenantClaim</code></td><td>Dotted paths allowed</td></tr>
-      </tbody>
-    </table>
+granted.jwt.discovery-uris[1].bypass=system:serviceaccount:my-namespace:*</app-code>
     <p>
-      How each option behaves is described once, on the NestJS page:
-      <a routerLink="/nestjs/info-providers">Where the identity comes from</a>.
+      <strong>A JWT verified by quarkus-oidc or quarkus-smallrye-jwt</strong> — <code>granted.source=jwt</code>
+      without key material: granted reads the token the extension verified, with the same claim mapping.
     </p>
 
     <h3>Roles</h3>
     <app-code lang="properties">granted.role-hierarchy.ADMIN=MANAGER
 granted.role-hierarchy.MANAGER=USER
 granted.known-roles=ADMIN,MANAGER,USER</app-code>
-    <p>An <code>ADMIN</code> passes <code>&#64;RolesAllowed("USER")</code>; any role outside <code>known-roles</code> is dropped, after the hierarchy is expanded.</p>
 
     <h3>Why did a request get a 403?</h3>
     <p>Every refusal is logged at <code>WARN</code>, the rule spelled as nestjs-granted names it:</p>
     <app-code lang="text">GET /stations denied: hasRole(FORECASTER) not met by 'bob' (roles: USER; tenant: acme)</app-code>
     <p>
-      The caller gets the bare <code>&#123;"statusCode":403,"error":"Forbidden","message":"Forbidden resource"&#125;</code>.
-      Where every caller is trusted, <code>granted.access-denied.details=true</code> writes the reason into the
-      response too.
+      The caller gets the bare <code>&#123;"statusCode":403,"error":"Forbidden","message":"Forbidden resource"&#125;</code>,
+      unless <code>granted.access-denied.details=true</code>. An anonymous caller on a protected route gets a
+      <code>401</code>.
     </p>
+
+    <h3>Options</h3>
+    <table>
+      <thead><tr><th>Property</th><th>Default</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>granted.source</code></td><td><code>headers</code></td><td><code>headers</code> or <code>jwt</code></td></tr>
+        <tr><td><code>granted.headers.username</code> / <code>.roles</code> / <code>.tenant</code></td><td><code>username</code> / <code>roles</code> / <code>tenant</code></td><td>Header names</td></tr>
+        <tr><td><code>granted.jwt.preset</code></td><td>—</td><td><code>rfc9068</code>, <code>azure-ad</code>, <code>keycloak</code>, <code>okta</code></td></tr>
+        <tr><td><code>granted.jwt.username-claim</code> / <code>.roles-claim</code> / <code>.tenant-claim</code></td><td><code>sub</code> / <code>roles</code> / <code>tenant</code>, or the preset's</td><td>Dotted paths allowed</td></tr>
+        <tr><td><code>granted.jwt.public-key</code> / <code>.public-key-file</code></td><td>—</td><td>PEM public key or certificate; with HS*, the shared secret</td></tr>
+        <tr><td><code>granted.jwt.algorithm</code></td><td><code>ES256</code> with a PEM key</td><td>A list; with a JWK Set, an allowlist (no <code>none</code>, no HS*)</td></tr>
+        <tr><td><code>granted.jwt.jwks-uri</code></td><td>—</td><td>The issuer's JWK Set</td></tr>
+        <tr><td><code>granted.jwt.discovery-uris[n].uri</code></td><td>—</td><td>Discovery document, or the URL it lives under</td></tr>
+        <tr><td><code>granted.jwt.discovery-uris[n].issuer</code> + <code>.jwks-uri</code></td><td>—</td><td>Instead of <code>uri</code>: given outright</td></tr>
+        <tr><td><code>granted.jwt.discovery-uris[n].bearer-token-file</code></td><td>—</td><td>Sent to this provider only, read at every fetch</td></tr>
+        <tr><td><code>granted.jwt.discovery-uris[n].audience</code></td><td><code>granted.jwt.audience</code></td><td>This provider's accepted <code>aud</code></td></tr>
+        <tr><td><code>granted.jwt.discovery-uris[n].bypass</code></td><td>—</td><td><code>sub</code> patterns passing every role check</td></tr>
+        <tr><td><code>granted.jwt.jwks-cache-max-age</code> / <code>.jwks-cooldown</code> / <code>.jwks-timeout</code></td><td><code>10M</code> / <code>30S</code> / <code>5S</code></td><td>JWK Set and discovery document fetches</td></tr>
+        <tr><td><code>granted.jwt.issuer</code> / <code>.audience</code></td><td>—</td><td>Accepted <code>iss</code> / <code>aud</code>; <code>/pattern/</code> for an audience regex</td></tr>
+        <tr><td><code>granted.role-hierarchy.&lt;ROLE&gt;</code></td><td>—</td><td>The roles it implies</td></tr>
+        <tr><td><code>granted.known-roles</code></td><td>— (every role kept)</td><td>The roles this service knows</td></tr>
+        <tr><td><code>granted.access-denied.details</code></td><td><code>false</code></td><td>The reason of a 403 in the response too</td></tr>
+      </tbody>
+    </table>
   `,
 })
 export class QuarkusComponent {}

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.softwarity</groupId>
+        <artifactId>quarkus-granted-parent</artifactId>
+        <version>5.8.0</version>
+    </parent>
+
+    <artifactId>quarkus-granted-deployment</artifactId>
+    <name>granted for Quarkus - deployment</name>
+    <description>The build-time half of the granted extension: teaches Quarkus REST the @GrantedClaim,
+        @GrantedUsername, @GrantedRoles and @GrantedTenant parameters.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.softwarity</groupId>
+            <artifactId>quarkus-granted</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-deployment</artifactId>
+        </dependency>
+        <!-- MethodScannerBuildItem: how a parameter Quarkus REST doesn't know gets its value. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-server-spi-deployment</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-security-deployment</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jsonp-deployment</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.softwarity</groupId>
+        <artifactId>quarkus-granted-parent</artifactId>
+        <version>5.8.0</version>
+    </parent>
+
+    <artifactId>quarkus-granted-integration-tests-jwt</artifactId>
+    <name>granted for Quarkus - integration tests, JWT verified by granted</name>
+    <description>An application whose tokens granted verifies itself - against a local OpenID Provider - and the tests that drive it. Never published.</description>
+
+    <properties>
+        <!-- Nothing here ships: no artifact to install or deploy. -->
+        <maven.install.skip>true</maven.install.skip>
+        <maven.deploy.skip>true</maven.deploy.skip>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.softwarity</groupId>
+            <artifactId>quarkus-granted</artifactId>
+        </dependency>
+        <!-- The test resources answer maps and lists. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-jackson</artifactId>
+        </dependency>
+        <!-- No quarkus-oidc, no smallrye-jwt: granted verifies the token itself. -->
+
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Built before the tests run, so Quarkus finds the extension's build steps in the reactor. -->
+        <dependency>
+            <groupId>io.softwarity</groupId>
+            <artifactId>quarkus-granted-deployment</artifactId>
+            <version>${project.version}</version>
+            <type>pom</type>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>*</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

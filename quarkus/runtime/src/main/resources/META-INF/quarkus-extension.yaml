@@ -1,0 +1,14 @@
+name: "granted"
+description: "Route-level authorization behind a gateway or an identity provider: the caller from gateway headers or a verified JWT, injected into resource methods; roles shaped by a hierarchy; every 403 explained in the log."
+metadata:
+  keywords:
+    - "security"
+    - "authorization"
+    - "rbac"
+    - "jwt"
+    - "roles"
+    - "claims"
+  guide: "https://softwarity.github.io/granted/#/quarkus"
+  categories:
+    - "security"
+  status: "stable"

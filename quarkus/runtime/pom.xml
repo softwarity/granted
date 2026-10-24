@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.softwarity</groupId>
+        <artifactId>quarkus-granted-parent</artifactId>
+        <version>5.8.0</version>
+    </parent>
+
+    <artifactId>quarkus-granted</artifactId>
+    <name>granted for Quarkus</name>
+    <description>Route-level authorization for Quarkus services behind a gateway or an identity provider: the
+        caller read from gateway headers or a verified JWT and injected into resource methods, its roles shaped
+        by a hierarchy, every refusal explained in the log.</description>
+
+    <!--
+      The runtime half of a Quarkus extension: what runs in the application. Its deployment half
+      (quarkus-granted-deployment) teaches Quarkus REST the @GrantedClaim, @GrantedUsername,
+      @GrantedRoles and @GrantedTenant parameters at build time.
+
+      Token verification is not done here: quarkus-oidc or quarkus-smallrye-jwt, which the
+      application picks, verify the token; this reads the verified one.
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-security</artifactId>
+        </dependency>
+        <!-- Roles and claims sent as a JSON array in a header, and the 403 body. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jsonp</artifactId>
+        </dependency>
+        <!--
+          The JWS signatures - RS*, PS*, ES*, EdDSA, HS* - when granted verifies the token itself; the
+          library quarkus-oidc and smallrye-jwt verify with too. Key selection, the algorithm policy,
+          the JWK Sets and the claims are granted's, as in nestjs-granted.
+        -->
+        <dependency>
+            <groupId>org.bitbucket.b_c</groupId>
+            <artifactId>jose4j</artifactId>
+        </dependency>
+        <!-- The verified token's interface only: the implementation is the application's choice. -->
+        <dependency>
+            <groupId>org.eclipse.microprofile.jwt</groupId>
+            <artifactId>microprofile-jwt-auth-api</artifactId>
+        </dependency>
+
+        <!-- The claim rules and the role hierarchy, tested without starting Quarkus. -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>io.quarkus</groupId>
+                <artifactId>quarkus-extension-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>extension-descriptor</goal>
+                        </goals>
+                        <configuration>
+                            <deployment>${project.groupId}:${project.artifactId}-deployment:${project.version}</deployment>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- JBoss Logging's manager, as in any Quarkus test: java.util.logging's own was taken otherwise. -->
+                    <systemPropertyVariables>
+                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

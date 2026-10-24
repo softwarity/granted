@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  granted for Quarkus: a Quarkus extension (runtime + deployment), and the application its tests
+  run against (integration-tests, never published) - under the version every package of this repository
+  carries (scripts/version-all.mjs writes it here too). They implement one behaviour - which
+  headers carry the caller, how the roles are shaped, how a refusal is reported - and a NestJS
+  and a Quarkus service on the same number must decide the same way.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.softwarity</groupId>
+    <artifactId>quarkus-granted-parent</artifactId>
+    <version>5.8.0</version>
+    <packaging>pom</packaging>
+    <name>granted for Quarkus (parent)</name>
+    <description>The parent of granted for Quarkus.</description>
+    <url>https://github.com/softwarity/granted</url>
+
+    <!-- What Maven Central asks of every pom it publishes; inherited by the modules. -->
+    <licenses>
+        <license>
+            <name>Apache-2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+        </license>
+    </licenses>
+    <developers>
+        <developer>
+            <id>hhfrancois</id>
+            <name>Francois Achache</name>
+            <email>francois.achache@softwarity.io</email>
+        </developer>
+    </developers>
+    <scm>
+        <connection>scm:git:https://github.com/softwarity/granted.git</connection>
+        <developerConnection>scm:git:https://github.com/softwarity/granted.git</developerConnection>
+        <url>https://github.com/softwarity/granted</url>
+    </scm>
+
+    <modules>
+        <module>runtime</module>
+        <module>deployment</module>
+        <module>integration-tests</module>
+        <module>integration-tests-jwt</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <quarkus.platform.version>3.40.1</quarkus.platform.version>
+        <surefire-plugin.version>3.5.6</surefire-plugin.version>
+        <source-plugin.version>3.3.1</source-plugin.version>
+        <javadoc-plugin.version>3.12.0</javadoc-plugin.version>
+        <gpg-plugin.version>3.2.8</gpg-plugin.version>
+        <central-plugin.version>0.12.0</central-plugin.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.quarkus.platform</groupId>
+                <artifactId>quarkus-bom</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.softwarity</groupId>
+                <artifactId>quarkus-granted</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.softwarity</groupId>
+                <artifactId>quarkus-granted-deployment</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${surefire-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>io.quarkus.platform</groupId>
+                    <artifactId>quarkus-maven-plugin</artifactId>
+                    <version>${quarkus.platform.version}</version>
+                </plugin>
+                <!-- Writes the extension descriptor that ties the runtime artifact to its deployment one. -->
+                <plugin>
+                    <groupId>io.quarkus</groupId>
+                    <artifactId>quarkus-extension-maven-plugin</artifactId>
+                    <version>${quarkus.platform.version}</version>
+                </plugin>
+                <!-- Checks the extension's build steps and recorded types at compile time. -->
+                <plugin>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>io.quarkus</groupId>
+                                <artifactId>quarkus-extension-processor</artifactId>
+                                <version>${quarkus.platform.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <!--
+      Publication to Maven Central, through the Central Portal (OSSRH is gone). Only on a
+      release - scripts/publish.sh runs `./mvnw -Prelease deploy` - so a plain
+      `verify` needs neither a key nor a token.
+
+      The bundle is uploaded and validated, then published without waiting for the
+      artifacts to reach the mirrors: what can refuse it (a missing signature, a missing
+      javadoc, a pom without a licence) is refused at validation, which this waits for.
+    -->
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${source-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${javadoc-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <!-- The comments are written for a reader, not for doclint. -->
+                            <doclint>none</doclint>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${gpg-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <!-- The passphrase comes from MAVEN_GPG_PASSPHRASE, never from a prompt. -->
+                            <gpgArguments>
+                                <arg>--pinentry-mode</arg>
+                                <arg>loopback</arg>
+                            </gpgArguments>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>${central-plugin.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <!-- The <server> setup-java writes, from the Portal user token. -->
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                            <waitUntil>validated</waitUntil>
+                            <deploymentName>granted ${project.version}</deploymentName>
+                            <!-- The application the tests run against is never published. -->
+                            <excludeArtifacts>
+                                <artifact>quarkus-granted-integration-tests</artifact>
+                                <artifact>quarkus-granted-integration-tests-jwt</artifact>
+                            </excludeArtifacts>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

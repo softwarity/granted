@@ -39,6 +39,18 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      # The Portal user token goes into a <server id="central">, the key into the
+      # runner's keyring; the gpg plugin reads MAVEN_GPG_PASSPHRASE.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          server-id: central
+          server-username: MAVEN_CENTRAL_USERNAME
+          server-password: MAVEN_CENTRAL_TOKEN
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       # Checked before the build and the tests: a token that expired would
       # otherwise be found at the very end, by the publish step.
@@ -47,11 +59,26 @@ jobs:
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm whoami --registry https://registry.npmjs.org/
 
+      # Same reason, for Maven Central: the Portal user token, then the signing key.
+      # The query names a version that does not exist - all it has to do is not
+      # answer 401.
+      - name: Verify the Maven Central token and the signing key still work
+        env:
+          CENTRAL_USERNAME: ${{ vars.MAVEN_CENTRAL_USERNAME }}
+          CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          curl -sSf -o /dev/null \
+            -H "Authorization: Bearer $(printf '%s:%s' "$CENTRAL_USERNAME" "$CENTRAL_TOKEN" | base64 -w0)" \
+            "https://central.sonatype.com/api/v1/publisher/published?namespace=io.softwarity&name=quarkus-granted&version=0.0.0"
+          echo check | gpg --batch --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --clearsign > /dev/null
+
       - run: npm ci
 
       # Before the build, so the build output carries the version it ships
       # under. The root manifest is left alone: it is what the action bumps, and
       # what it reads to know the version before.
+      # quarkus/ poms included: scripts/version-all.mjs writes their version too.
       - name: Put every package on the version this release carries
         run: |
           NEXT=$(node -p "
@@ -64,15 +91,40 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - name: Build and test the Quarkus library, on the version it ships under
+        working-directory: quarkus
+        run: ./mvnw -B verify
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go/go.mod
+          cache-dependency-path: go/go.sum
+      - name: Test the Go module
+        working-directory: go
+        run: |
+          go vet ./...
+          go test -race ./...
 
       # Staged rather than committed: release-flow commits the index as it
       # finds it, so all of this lands in the release commit and the tag
       # carries it.
       - name: Stage the version, and the lockfile that records it
-        run: git add packages/*/package.json package-lock.json
+        run: git add packages/*/package.json package-lock.json quarkus/pom.xml quarkus/*/pom.xml go/go.mod
 
       - id: release
         uses: softwarity/release-flow@v1
         with:
           bump: ${{ inputs.bump }}
           publish: ./scripts/publish.sh
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ vars.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      # Go has no registry: the tag is the publication, and a module in a
+      # subdirectory is fetched under `go/vX.Y.Z`. Same commit, same number.
+      # Annotated, because a lightweight tag is skipped by `--follow-tags`.
+      - name: Tag the Go module on the same commit
+        run: |
+          TAG="go/v${{ steps.release.outputs.version }}"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
