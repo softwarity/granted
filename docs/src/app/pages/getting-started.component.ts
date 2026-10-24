@@ -52,7 +52,8 @@ import { CodeComponent } from '../code/code.component';
     <p>
       <strong>&#64;softwarity/nestjs-granted</strong> decides, route by route, who may call your NestJS API.
       Put <code>&#64;GrantedTo(...)</code> on a route: a global guard checks it on every request. Your handlers
-      read the caller with <code>&#64;Username()</code>, <code>&#64;Roles()</code> and <code>&#64;Tenant()</code>.
+      read the caller with <code>&#64;Username()</code>, <code>&#64;Roles()</code>, <code>&#64;Tenant()</code> — and any
+      other claim with <code>&#64;Claim('territories')</code>.
     </p>
     <div class="callout">
       It doesn't log anyone in. Something in front of your service — a gateway, an identity provider — has
@@ -73,7 +74,7 @@ import &#123; GrantedModule &#125; from '&#64;softwarity/nestjs-granted';
 export class AppModule &#123;&#125;</app-code>
     <p>
       The caller is read from the <code>username</code>, <code>roles</code> and <code>tenant</code> headers.
-      Your requests carry a JWT instead? See <a routerLink="/info-providers">Where the identity comes from</a>.
+      Your requests carry a JWT instead? See <a routerLink="/nestjs/info-providers">Where the identity comes from</a>.
     </p>
 
     <h3>3. Protect a route</h3>
@@ -95,42 +96,42 @@ export class ReportsController &#123;
 
     <h3>What do you want to do?</h3>
     <section class="cards">
-      <a routerLink="/securing-endpoints" class="card">
+      <a routerLink="/nestjs/securing-endpoints" class="card">
         <span class="card-icon material-symbols-outlined">lock</span>
         <span class="card-title">Restrict a route</span>
         <span class="card-desc">To logged-in users, to a role, or to several conditions.</span>
       </a>
-      <a routerLink="/securing-endpoints" class="card">
+      <a routerLink="/nestjs/securing-endpoints" class="card">
         <span class="card-icon material-symbols-outlined">verified_user</span>
         <span class="card-title">Users touch only their data</span>
         <span class="card-desc">Refuse a request naming someone else's id or tenant.</span>
       </a>
-      <a routerLink="/parameter-decorators" class="card">
+      <a routerLink="/nestjs/parameter-decorators" class="card">
         <span class="card-icon material-symbols-outlined">badge</span>
         <span class="card-title">Read the caller</span>
-        <span class="card-desc"><code>&#64;Username()</code>, <code>&#64;Roles()</code>, <code>&#64;Tenant()</code> in a handler.</span>
+        <span class="card-desc"><code>&#64;Username()</code>, <code>&#64;Roles()</code>, <code>&#64;Tenant()</code>, <code>&#64;Claim()</code> in a handler.</span>
       </a>
-      <a routerLink="/roles" class="card">
+      <a routerLink="/nestjs/roles" class="card">
         <span class="card-icon material-symbols-outlined">account_tree</span>
         <span class="card-title">Shape the roles</span>
         <span class="card-desc">ADMIN implies USER; ignore the roles meant for other services.</span>
       </a>
-      <a routerLink="/info-providers" class="card">
+      <a routerLink="/nestjs/info-providers" class="card">
         <span class="card-icon material-symbols-outlined">key</span>
         <span class="card-title">Verify JWTs</span>
         <span class="card-desc">From a key file, a JWKS URL, or several identity providers.</span>
       </a>
-      <a routerLink="/info-providers" class="card">
+      <a routerLink="/nestjs/info-providers" class="card">
         <span class="card-icon material-symbols-outlined">hub</span>
         <span class="card-title">Let your services through</span>
         <span class="card-desc">The services of your cluster call each other with their pod's token.</span>
       </a>
-      <a routerLink="/securing-endpoints" class="card">
+      <a routerLink="/nestjs/securing-endpoints" class="card">
         <span class="card-icon material-symbols-outlined">report</span>
         <span class="card-title">Understand a 403</span>
         <span class="card-desc">Log which rule refused the caller, without telling the caller.</span>
       </a>
-      <a routerLink="/reference" class="card">
+      <a routerLink="/nestjs/reference" class="card">
         <span class="card-icon material-symbols-outlined">settings</span>
         <span class="card-title">All the options</span>
         <span class="card-desc">Module, header provider and JWT provider.</span>

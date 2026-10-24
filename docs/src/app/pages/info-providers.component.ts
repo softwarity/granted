@@ -10,9 +10,9 @@ import { CodeComponent } from '../code/code.component';
     <table>
       <thead><tr><th>Your setup</th><th>Use</th></tr></thead>
       <tbody>
-        <tr><td>A gateway puts the user in HTTP headers</td><td><a routerLink="/info-providers" fragment="headers">Headers</a> — the default</td></tr>
-        <tr><td>Requests carry <code>Authorization: Bearer &lt;JWT&gt;</code></td><td><a routerLink="/info-providers" fragment="jwt"><code>GrantedJwtPrincipalProvider</code></a></td></tr>
-        <tr><td>Something else — a session, another scheme</td><td><a routerLink="/info-providers" fragment="custom">Your own provider</a></td></tr>
+        <tr><td>A gateway puts the user in HTTP headers</td><td><a routerLink="/nestjs/info-providers" fragment="headers">Headers</a> — the default</td></tr>
+        <tr><td>Requests carry <code>Authorization: Bearer &lt;JWT&gt;</code></td><td><a routerLink="/nestjs/info-providers" fragment="jwt"><code>GrantedJwtPrincipalProvider</code></a></td></tr>
+        <tr><td>Something else — a session, another scheme</td><td><a routerLink="/nestjs/info-providers" fragment="custom">Your own provider</a></td></tr>
       </tbody>
     </table>
 
@@ -165,7 +165,7 @@ await fetch('http://billing/api/invoices', &#123; headers: &#123; authorization:
       audience: <code>&#123; uri, audience: 'internal' &#125;</code>.
     </p>
 
-    <p>All the options: <a routerLink="/reference">Options reference</a>.</p>
+    <p>All the options: <a routerLink="/nestjs/reference">Options reference</a>.</p>
     <p>Good to know:</p>
     <ul>
       <li>A token signed by a key the provider doesn't know yet triggers one re-fetch: a key rotation needs no restart.</li>

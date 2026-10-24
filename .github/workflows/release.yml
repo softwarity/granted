@@ -1,0 +1,78 @@
+name: Create Tag/Release
+run-name: ${{ github.actor }} release ${{ inputs.bump }} on ${{ github.repository }}
+
+# One run publishes every package of the repository, under one version: they
+# implement the same behaviour, and a NestJS and a Quarkus service on the same
+# number must decide the same way.
+#
+# The bump, the notes and the GitHub Release are softwarity/release-flow's
+# business. Publication is too: its `publish` command (scripts/publish.sh) runs
+# once the release commit and tag exist on the runner, before anything is
+# pushed - so a registry that refuses leaves no tag, no GitHub Release and no
+# commit behind.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump'
+        type: choice
+        required: true
+        default: patch
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # The PAT is what the action pushes with, past the branch protection.
+      # fetch-depth: 0 so the tags are visible.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      # Checked before the build and the tests: a token that expired would
+      # otherwise be found at the very end, by the publish step.
+      - name: Verify the npm token still works
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          npm whoami --registry https://registry.npmjs.org/
+
+      - run: npm ci
+
+      # Before the build, so the build output carries the version it ships
+      # under. The root manifest is left alone: it is what the action bumps, and
+      # what it reads to know the version before.
+      - name: Put every package on the version this release carries
+        run: |
+          NEXT=$(node -p "
+            const [major, minor, patch] = require('./package.json').version.split('.').map(Number);
+            ({ major: [major + 1, 0, 0], minor: [major, minor + 1, 0], patch: [major, minor, patch + 1] })['${{ inputs.bump }}'].join('.')
+          ")
+          node scripts/version-all.mjs "$NEXT"
+          npm install --package-lock-only --ignore-scripts
+
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+      # Staged rather than committed: release-flow commits the index as it
+      # finds it, so all of this lands in the release commit and the tag
+      # carries it.
+      - name: Stage the version, and the lockfile that records it
+        run: git add packages/*/package.json package-lock.json
+
+      - id: release
+        uses: softwarity/release-flow@v1
+        with:
+          bump: ${{ inputs.bump }}
+          publish: ./scripts/publish.sh

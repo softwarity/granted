@@ -3,11 +3,11 @@
 [![npm version](https://img.shields.io/npm/v/@softwarity/nestjs-granted.svg)](https://www.npmjs.com/package/@softwarity/nestjs-granted)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-yellow.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Node](https://img.shields.io/node/v/@softwarity/nestjs-granted.svg)](https://nodejs.org)
-[![Unit tests](https://github.com/softwarity/nestjs-granted/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/softwarity/nestjs-granted/actions/workflows/unit-tests.yml)
+[![Unit tests](https://github.com/softwarity/granted/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/softwarity/granted/actions/workflows/unit-tests.yml)
 
-**Decide, route by route, who may call your NestJS API.** Put `@GrantedTo(...)` on a route: a global guard checks it on every request. Your handlers read the caller with `@Username()`, `@Roles()` and `@Tenant()`. The caller comes from gateway headers or from a verified JWT.
+**Decide, route by route, who may call your NestJS API.** Put `@GrantedTo(...)` on a route: a global guard checks it on every request. Your handlers read the caller with `@Username()`, `@Roles()`, `@Tenant()` — and any other claim with `@Claim('territories')`. The caller comes from gateway headers or from a verified JWT.
 
-📚 **Documentation:** [softwarity.github.io/nestjs-granted](https://softwarity.github.io/nestjs-granted/)
+📚 **Documentation:** [softwarity.github.io/granted](https://softwarity.github.io/granted/)
 
 ```ts
 @Get('orders/:userId')

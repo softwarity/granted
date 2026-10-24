@@ -1,0 +1,22 @@
+{
+  "name": "@softwarity/granted-workspace",
+  "version": "5.8.0",
+  "private": true,
+  "description": "Route-level authorization for services behind a gateway or an identity provider - workspace root",
+  "license": "Apache-2.0",
+  "author": "François ACHACHE <francois.achache@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/softwarity/granted.git"
+  },
+  "workspaces": [
+    "packages/nestjs"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "// version:all": "puts every package of the repository on one version: they implement the same behaviour, and a NestJS and a Quarkus service on the same number must decide the same way",
+    "version:all": "node scripts/version-all.mjs"
+  }
+}

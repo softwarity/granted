@@ -2,6 +2,11 @@
 
 ## NEXT RELEASE
 
+### Internal changes
+
+- **The repository moved to [`softwarity/granted`](https://github.com/softwarity/granted)**, which will host the Quarkus (and later Go) implementations next to this one. Nothing changes for an application: the package is still `@softwarity/nestjs-granted`, its API is the same. The library now lives in `packages/nestjs/`, with its whole history, in an npm workspace; the doc site moves to [softwarity.github.io/granted](https://softwarity.github.io/granted/). Every package of the repository will carry the same version.
+- Publication now happens inside the release run, through release-flow's `publish` step (`scripts/publish.sh`), before anything is pushed: a refused `npm publish` leaves no tag, no GitHub Release and no commit behind. The separate tag-triggered workflow is gone.
+
 ---
 
 ## 5.8.0

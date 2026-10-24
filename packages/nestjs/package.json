@@ -14,13 +14,14 @@
     "access-control",
     "permissions"
   ],
-  "homepage": "https://github.com/softwarity/nestjs-granted#readme",
+  "homepage": "https://softwarity.github.io/granted/",
   "bugs": {
-    "url": "https://github.com/softwarity/nestjs-granted/issues"
+    "url": "https://github.com/softwarity/granted/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/softwarity/nestjs-granted.git"
+    "url": "git+https://github.com/softwarity/granted.git",
+    "directory": "packages/nestjs"
   },
   "license": "Apache-2.0",
   "author": "François ACHACHE <francois.achache@gmail.com>",
@@ -36,9 +37,9 @@
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
     "lint:fix": "eslint \"src/**/*.ts\" \"test/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "test:cov": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "test:cov": "NODE_OPTIONS=--experimental-vm-modules jest --coverage"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -12,10 +12,10 @@ import { RouterLink } from '@angular/router';
       <thead><tr><th>Option</th><th>Default</th><th></th></tr></thead>
       <tbody>
         <tr><td><code>apply</code></td><td><code>true</code></td><td><code>false</code> lets every request through; the decorators keep working.</td></tr>
-        <tr><td><code>principalProvider</code></td><td>headers</td><td>Where the identity comes from: <a routerLink="/info-providers">providers</a>.</td></tr>
-        <tr><td><code>roleHierarchy</code></td><td>—</td><td>A role → the roles it implies: <a routerLink="/roles">Roles</a>.</td></tr>
-        <tr><td><code>knownRoles</code></td><td>all roles kept</td><td>The roles to keep: <a routerLink="/roles">Roles</a>.</td></tr>
-        <tr><td><code>openApiSecurityScheme</code></td><td><code>'bearer'</code></td><td>Scheme the roles are written under in the OpenAPI document: <a routerLink="/securing-endpoints" fragment="openapi">OpenAPI</a>.</td></tr>
+        <tr><td><code>principalProvider</code></td><td>headers</td><td>Where the identity comes from: <a routerLink="/nestjs/info-providers">providers</a>.</td></tr>
+        <tr><td><code>roleHierarchy</code></td><td>—</td><td>A role → the roles it implies: <a routerLink="/nestjs/roles">Roles</a>.</td></tr>
+        <tr><td><code>knownRoles</code></td><td>all roles kept</td><td>The roles to keep: <a routerLink="/nestjs/roles">Roles</a>.</td></tr>
+        <tr><td><code>openApiSecurityScheme</code></td><td><code>'bearer'</code></td><td>Scheme the roles are written under in the OpenAPI document: <a routerLink="/nestjs/securing-endpoints" fragment="openapi">OpenAPI</a>.</td></tr>
       </tbody>
     </table>
     <div class="callout">
@@ -38,7 +38,7 @@ import { RouterLink } from '@angular/router';
     <p>
       <code>new GrantedJwtPrincipalProvider(options)</code>, or a preset that sets the claims:
       <code>.rfc9068()</code>, <code>.azureAd()</code>, <code>.keycloak()</code>, <code>.okta()</code> — see
-      <a routerLink="/info-providers" fragment="jwt">A JWT</a>.
+      <a routerLink="/nestjs/info-providers" fragment="jwt">A JWT</a>.
     </p>
     <table>
       <thead><tr><th>Option</th><th>Default</th><th></th></tr></thead>
@@ -65,7 +65,7 @@ import { RouterLink } from '@angular/router';
       <thead><tr><th>Rule</th><th>Passes when</th></tr></thead>
       <tbody>
         <tr><td><code>isAuthenticated()</code></td><td>the caller is known (not <code>anonymous</code>)</td></tr>
-        <tr><td><code>hasRole('ADMIN')</code></td><td>the caller has the role, directly or <a routerLink="/roles">implied</a></td></tr>
+        <tr><td><code>hasRole('ADMIN')</code></td><td>the caller has the role, directly or <a routerLink="/nestjs/roles">implied</a></td></tr>
         <tr><td><code>isUser('Param', 'userId')</code></td><td>the request value is the caller's username — <code>'Param'</code>, <code>'Query'</code> or <code>'Body'</code> (dotted path)</td></tr>
         <tr><td><code>isTenant('Param', 'tenantId')</code></td><td>the request value is the caller's tenant; refused when the caller has none</td></tr>
         <tr><td><code>and(a, b, …)</code></td><td>all pass</td></tr>

@@ -21,7 +21,7 @@ profile() &#123;&#125;</app-code>
     <app-code lang="ts">&#64;Get('reports')
 &#64;GrantedTo(hasRole('ADMIN'))
 reports() &#123;&#125;</app-code>
-    <p>An implied role counts too: with <code>ADMIN ⇒ USER</code>, an ADMIN passes <code>hasRole('USER')</code>. See <a routerLink="/roles">Roles</a>.</p>
+    <p>An implied role counts too: with <code>ADMIN ⇒ USER</code>, an ADMIN passes <code>hasRole('USER')</code>. See <a routerLink="/nestjs/roles">Roles</a>.</p>
 
     <h3>One role among several</h3>
     <app-code lang="ts">&#64;GrantedTo(or(hasRole('ADMIN'), hasRole('ACCOUNTANT')))</app-code>
@@ -62,7 +62,7 @@ updateProfile() &#123;&#125;
 createOrder() &#123;&#125;</app-code>
     <div class="callout warn">
       This checks the id a request names. A route that <em>lists</em> records (<code>GET /orders</code>) must still
-      filter its query by the caller, with <a routerLink="/parameter-decorators"><code>&#64;Username()</code></a>.
+      filter its query by the caller, with <a routerLink="/nestjs/parameter-decorators"><code>&#64;Username()</code></a>.
     </div>
 
     <h3>Users may only touch their own tenant</h3>
@@ -70,7 +70,7 @@ createOrder() &#123;&#125;</app-code>
 &#64;Post('tenants/:tenantId/invoices')
 &#64;GrantedTo(or(hasRole('ADMIN'), isTenant('Param', 'tenantId')))
 createInvoice() &#123;&#125;</app-code>
-    <p>A caller without a tenant is refused. Filter your queries with <a routerLink="/parameter-decorators"><code>&#64;Tenant()</code></a> as well.</p>
+    <p>A caller without a tenant is refused. Filter your queries with <a routerLink="/nestjs/parameter-decorators"><code>&#64;Tenant()</code></a> as well.</p>
 
     <h3>Reuse a rule</h3>
     <app-code lang="ts">// security/rules.ts
@@ -94,7 +94,7 @@ export const hasScope = (scope: string): BooleanSpec =&gt; (&#123;
       <thead><tr><th>Rule</th><th>Passes when</th></tr></thead>
       <tbody>
         <tr><td><code>isAuthenticated()</code></td><td>the caller is known (not <code>anonymous</code>)</td></tr>
-        <tr><td><code>hasRole('ADMIN')</code></td><td>the caller has the role, directly or <a routerLink="/roles">implied</a></td></tr>
+        <tr><td><code>hasRole('ADMIN')</code></td><td>the caller has the role, directly or <a routerLink="/nestjs/roles">implied</a></td></tr>
         <tr><td><code>isUser('Param', 'userId')</code></td><td>the request value is the caller's username — <code>'Param'</code>, <code>'Query'</code> or <code>'Body'</code> (dotted path)</td></tr>
         <tr><td><code>isTenant('Param', 'tenantId')</code></td><td>the request value is the caller's tenant; refused when the caller has none</td></tr>
         <tr><td><code>and(a, b, …)</code></td><td>all pass</td></tr>
@@ -123,7 +123,7 @@ export class DenialFilter extends BaseExceptionFilter &#123;
 app.useGlobalFilters(new DenialFilter(app.getHttpAdapter()));</app-code>
     <p>
       <code>deniedSpec</code> is the first rule that failed, <code>roles</code> the roles it was checked against
-      (after <a routerLink="/roles">hierarchy and filtering</a>), plus <code>username</code> and <code>tenant</code>.
+      (after <a routerLink="/nestjs/roles">hierarchy and filtering</a>), plus <code>username</code> and <code>tenant</code>.
     </p>
     <div class="callout warn">Don't send these details back: they tell an attacker what to forge.</div>
 

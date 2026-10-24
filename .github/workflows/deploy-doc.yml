@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - main
+    # Only the site's own sources: a library change doesn't change the page.
+    paths:
+      - 'docs/**'
+      - '.github/workflows/deploy-doc.yml'
   workflow_dispatch:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
@@ -27,12 +31,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install doc-site deps
         working-directory: docs
@@ -40,7 +44,7 @@ jobs:
 
       - name: Build doc-site for GitHub Pages
         working-directory: docs
-        run: npm run build -- --base-href /nestjs-granted/
+        run: npm run build -- --base-href /granted/
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

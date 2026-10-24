@@ -15,12 +15,12 @@ me(&#64;Username() username: string, &#64;Roles() roles: string[], &#64;Tenant()
       <thead><tr><th>Decorator</th><th>Gives</th><th>When the caller has none</th></tr></thead>
       <tbody>
         <tr><td><code>&#64;Username()</code></td><td><code>string</code></td><td><code>'anonymous'</code></td></tr>
-        <tr><td><code>&#64;Roles()</code></td><td><code>string[]</code> — the roles the rules see, after <a routerLink="/roles">hierarchy and filtering</a></td><td><code>[]</code></td></tr>
+        <tr><td><code>&#64;Roles()</code></td><td><code>string[]</code> — the roles the rules see, after <a routerLink="/nestjs/roles">hierarchy and filtering</a></td><td><code>[]</code></td></tr>
         <tr><td><code>&#64;Tenant()</code></td><td><code>string | undefined</code></td><td><code>undefined</code></td></tr>
         <tr><td><code>&#64;Claim(name, options?)</code></td><td>any other attribute of the caller — see below</td><td><code>undefined</code>, or <code>[]</code> for a list</td></tr>
       </tbody>
     </table>
-    <p>Where the values come from — headers, a JWT — is set once in <code>forRoot</code>: see <a routerLink="/info-providers">Where the identity comes from</a>.</p>
+    <p>Where the values come from — headers, a JWT — is set once in <code>forRoot</code>: see <a routerLink="/nestjs/info-providers">Where the identity comes from</a>.</p>
 
     <h3>Filter your data by caller</h3>
     <p>A rule refuses a request naming someone else's record. To return only the caller's records, filter the query:</p>
@@ -72,7 +72,7 @@ list(&#64;Claim('territories', &#123; type: 'string', array: true &#125;) territ
       <li>Without options, the value is given as found.</li>
     </ul>
     <p>
-      With <a routerLink="/info-providers">your own provider</a>, implement
+      With <a routerLink="/nestjs/info-providers">your own provider</a>, implement
       <code>getClaimFromIncomingMessage(msg, name)</code>, returning the value as found; without it, a route
       using <code>&#64;Claim</code> fails with an error naming the method.
     </p>
