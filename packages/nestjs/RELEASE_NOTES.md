@@ -2,6 +2,16 @@
 
 ## NEXT RELEASE
 
+### New features
+
+- **`@Claim(name, options?)` — any other attribute of the caller, injected into a handler.** Roles decide which actions a caller may take; claims scope which data. `list(@Claim('territories', { type: 'string', array: true }) territories: string[])` gives the territories a tenant may touch, ready for a `WHERE territory IN (...)`. The value is read through the principal provider, like `@Username()`: a claim of the verified JWT with `GrantedJwtPrincipalProvider` (dotted paths for nested claims, e.g. `'realm_access.territories'`) — never a header of the same name —, the header of that name with `GrantedPrincipalProvider`. Options: `type` (`'string' | 'number' | 'boolean'`, of each element with `array`), `array` (a single value is taken as a list of one) and `required` (403 when missing or invalid). A string value is parsed: with `array`, a JSON array or a comma-separated list; `number` and `boolean` convert strictly. A missing value gives `undefined`, or `[]` with `array`; a value of the wrong type is treated as missing, with a warning naming the claim but never its value; in a list, only the elements of the wrong type are dropped (`['FR', 42, 'GP']` gives `['FR', 'GP']`), and a list left empty counts as missing. A number or a boolean given as a string converts. Without options, the value is given as found. New exported type `ClaimOptions`.
+- **New optional method `getClaimFromIncomingMessage(msg, name)` on `IGrantedPrincipalProvider`**, used by `@Claim`; both built-in providers implement it. Existing custom providers keep compiling and working; only a route using `@Claim` needs it, and fails with an error naming the method when it's missing.
+
+### Internal changes
+
+- New `test/claim.spec.ts` suite, end to end through a controller: JWT (dotted path, lists, numbers, booleans, single value as a list, failed verification, header of the same name ignored), JWKS after `prepare()`, gateway headers (JSON and CSV lists, strict conversions, malformed JSON, empty header), wrong types and their warning, `required`, a provider without the method.
+- Docs (README and site): `@Claim` on *Read the caller*, the method on *Your own provider*.
+
 ---
 
 ## 5.7.0

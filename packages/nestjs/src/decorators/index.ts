@@ -1,3 +1,4 @@
+export * from './claim.decorator';
 export * from './granted-to.decorator';
 export * from './roles.decorator';
 export * from './tenant.decorator';

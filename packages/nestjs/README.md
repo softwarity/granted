@@ -212,6 +212,32 @@ me(@Username() username: string, @Roles() roles: string[], @Tenant() tenant: str
 | `@Username()` | `string` | `'anonymous'` |
 | `@Roles()` | `string[]` — the roles the rules see, after [hierarchy and filtering](#roles) | `[]` |
 | `@Tenant()` | `string \| undefined` | `undefined` |
+| `@Claim(name, options?)` | any other attribute of the caller — see below | `undefined`, or `[]` for a list |
+
+### Any other claim — `@Claim`
+
+Roles decide *which* actions a caller may take; claims scope *which* data. When a tenant manages several territories and may only touch those, read them from the token — or from the gateway's headers — and filter by them:
+
+```ts
+@Get('stations')
+@GrantedTo(hasRole('FORECASTER'))
+list(@Claim('territories', { type: 'string', array: true }) territories: string[]) {
+  return this.stations.find({ where: { territory: In(territories) } });
+}
+```
+
+The value comes from the same place as the rest of the identity: a claim of the **verified** JWT (dotted paths for nested claims, e.g. `'realm_access.territories'`), or the header of that name with the header provider — never from a header when the identity comes from a JWT.
+
+| Option | | |
+|---|---|---|
+| `type` | `'string' \| 'number' \| 'boolean'` | Expected type — of each element with `array`. Unchecked when unset. |
+| `array` | `boolean` | The value is a list. A single value is taken as a list of one. |
+| `required` | `boolean` | Refuse the request (403) when the claim is missing or doesn't have the expected type. |
+
+- **Strings are parsed.** Headers only carry strings: with `array`, a JSON array (`["FR","GP"]`) or a comma-separated list (`FR, GP`); `number` and `boolean` convert strictly (`'5000'`, `'true'` / `'false'`). A string claim in a JWT is parsed the same way.
+- **Missing** gives `undefined` (`[]` with `array`, ready for an `IN (...)`).
+- **The wrong type** — a number where strings are expected, a list where one value is — is treated as missing, with a warning naming the claim, never its value. In a list, only the elements of the wrong type are dropped (`['FR', 42, 'GP']` gives `['FR', 'GP']`), with a warning too; a list left empty counts as missing. A number or a boolean given as a string (`'42'`, `'true'`) converts: it isn't of the wrong type.
+- Without options, the value is given as found.
 
 ---
 
@@ -399,7 +425,7 @@ export class SessionProvider implements IGrantedPrincipalProvider {
 GrantedModule.forRoot({ principalProvider: new SessionProvider(sessions) });
 ```
 
-A `prepare()` that throws fails the request: catch what should rather give an anonymous caller. To let a caller through every rule, also implement `isBypassed(request): boolean`.
+A `prepare()` that throws fails the request: catch what should rather give an anonymous caller. To let a caller through every rule, also implement `isBypassed(request): boolean`. For [`@Claim`](#any-other-claim--claim), implement `getClaimFromIncomingMessage(msg, name)`, returning the value as found — `@Claim` converts it; without it, a route using `@Claim` fails with an error naming the method.
 
 ---
 

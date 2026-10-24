@@ -22,4 +22,10 @@ export interface IGrantedPrincipalProvider {
   getUsernameFromIncomingMessage(incomingMessage: IncomingMessage): string;
   getRolesFromIncomingMessage(incomingMessage: IncomingMessage): string[];
   getTenantFromIncomingMessage(incomingMessage: IncomingMessage): string | undefined;
+
+  /**
+   * Optional: any other attribute of the caller, read by `@Claim(name)` — a
+   * JWT claim, a gateway header… Returned as found: `@Claim` converts it.
+   */
+  getClaimFromIncomingMessage?(incomingMessage: IncomingMessage, name: string): unknown;
 }

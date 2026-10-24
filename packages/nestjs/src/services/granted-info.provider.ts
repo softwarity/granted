@@ -61,6 +61,11 @@ export class GrantedPrincipalProvider implements IGrantedPrincipalProvider {
     return this.readHeader(incomingMessage, this.tenantHeader) || undefined;
   }
 
+  /** The header of the same name, as a string — `@Claim` parses it. */
+  getClaimFromIncomingMessage(incomingMessage: IncomingMessage, name: string): string | undefined {
+    return this.readHeader(incomingMessage, name);
+  }
+
   /** IncomingMessage header keys are lowercased by Node — normalise the lookup. */
   private readHeader(incomingMessage: IncomingMessage, name: string): string | undefined {
     return incomingMessage.headers[name.toLowerCase()] as string | undefined;

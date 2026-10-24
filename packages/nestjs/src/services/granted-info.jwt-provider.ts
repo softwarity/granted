@@ -520,6 +520,11 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
     return this.resolveClaim(this.initFromIncomingMessage(incomingMessage), this.tenantClaim) || undefined;
   }
 
+  /** Any claim of the verified token, by name or dotted path. */
+  getClaimFromIncomingMessage(incomingMessage: IncomingMessage, name: string): unknown {
+    return this.resolveClaim(this.initFromIncomingMessage(incomingMessage), name);
+  }
+
   /** Reads a claim by name, supporting dotted paths for nested claims. */
   private resolveClaim(payload: any, path: string): any {
     if (!path) {
