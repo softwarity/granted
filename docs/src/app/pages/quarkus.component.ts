@@ -6,7 +6,6 @@ import { CodeComponent } from '../code/code.component';
   imports: [CodeComponent],
   template: `
     <h2>Quarkus</h2>
-    <div class="callout">Published with the next release of granted, alongside the NestJS package.</div>
     <p>
       <strong>io.softwarity:quarkus-granted</strong> is a Quarkus extension with the behaviour of nestjs-granted:
       the caller from the gateway's headers or from a JWT — verified by granted itself, or by quarkus-oidc /

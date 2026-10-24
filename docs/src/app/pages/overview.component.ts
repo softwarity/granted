@@ -100,12 +100,12 @@ func list(w http.ResponseWriter, r *http.Request) &#123;
         <tr>
           <td><a routerLink="/quarkus">Quarkus</a></td>
           <td><code>io.softwarity:quarkus-granted</code> (Maven Central)</td>
-          <td>Next release</td>
+          <td>Available</td>
         </tr>
         <tr>
           <td><a routerLink="/go">Go</a></td>
           <td><code>github.com/softwarity/granted/go/v5</code></td>
-          <td>Next release</td>
+          <td>Available</td>
         </tr>
       </tbody>
     </table>

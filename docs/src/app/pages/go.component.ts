@@ -6,7 +6,6 @@ import { CodeComponent } from '../code/code.component';
   imports: [CodeComponent],
   template: `
     <h2>Go</h2>
-    <div class="callout">Published with the next release of granted, alongside the NestJS package.</div>
     <p>
       <strong>github.com/softwarity/granted/go/v5</strong> reads the caller of a Go service the way
       nestjs-granted does — from the gateway's headers or from a verified JWT — and checks each route with the
