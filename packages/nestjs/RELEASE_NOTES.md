@@ -2,6 +2,10 @@
 
 ## NEXT RELEASE
 
+---
+
+## 5.8.0
+
 ### New features
 
 - **`@Claim(name, options?)` — any other attribute of the caller, injected into a handler.** Roles decide which actions a caller may take; claims scope which data. `list(@Claim('territories', { type: 'string', array: true }) territories: string[])` gives the territories a tenant may touch, ready for a `WHERE territory IN (...)`. The value is read through the principal provider, like `@Username()`: a claim of the verified JWT with `GrantedJwtPrincipalProvider` (dotted paths for nested claims, e.g. `'realm_access.territories'`) — never a header of the same name —, the header of that name with `GrantedPrincipalProvider`. Options: `type` (`'string' | 'number' | 'boolean'`, of each element with `array`), `array` (a single value is taken as a list of one) and `required` (403 when missing or invalid). A string value is parsed: with `array`, a JSON array or a comma-separated list; `number` and `boolean` convert strictly. A missing value gives `undefined`, or `[]` with `array`; a value of the wrong type is treated as missing, with a warning naming the claim but never its value; in a list, only the elements of the wrong type are dropped (`['FR', 42, 'GP']` gives `['FR', 'GP']`), and a list left empty counts as missing. A number or a boolean given as a string converts. Without options, the value is given as found. New exported type `ClaimOptions`.
