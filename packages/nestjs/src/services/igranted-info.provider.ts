@@ -24,8 +24,8 @@ export interface IGrantedPrincipalProvider {
   getTenantFromIncomingMessage(incomingMessage: IncomingMessage): string | undefined;
 
   /**
-   * Optional: any other attribute of the caller, read by `@Claim(name)` — a
-   * JWT claim, a gateway header… Returned as found: `@Claim` converts it.
+   * Optional: any other attribute of the caller, read by `@GrantedClaim(name)` — a
+   * JWT claim, a gateway header… Returned as found: `@GrantedClaim` converts it.
    */
   getClaimFromIncomingMessage?(incomingMessage: IncomingMessage, name: string): unknown;
 }

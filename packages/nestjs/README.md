@@ -5,7 +5,7 @@
 [![Node](https://img.shields.io/node/v/@softwarity/nestjs-granted.svg)](https://nodejs.org)
 [![Unit tests](https://github.com/softwarity/granted/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/softwarity/granted/actions/workflows/unit-tests.yml)
 
-**Decide, route by route, who may call your NestJS API.** Put `@GrantedTo(...)` on a route: a global guard checks it on every request. Your handlers read the caller with `@Username()`, `@Roles()`, `@Tenant()` — and any other claim with `@Claim('territories')`. The caller comes from gateway headers or from a verified JWT.
+**Decide, route by route, who may call your NestJS API.** Put `@GrantedTo(...)` on a route: a global guard checks it on every request. Your handlers read the caller with `@Username()`, `@Roles()`, `@Tenant()` — and any other claim with `@GrantedClaim('territories')`. The caller comes from gateway headers or from a verified JWT.
 
 📚 **Documentation:** [softwarity.github.io/granted](https://softwarity.github.io/granted/)
 
@@ -212,16 +212,16 @@ me(@Username() username: string, @Roles() roles: string[], @Tenant() tenant: str
 | `@Username()` | `string` | `'anonymous'` |
 | `@Roles()` | `string[]` — the roles the rules see, after [hierarchy and filtering](#roles) | `[]` |
 | `@Tenant()` | `string \| undefined` | `undefined` |
-| `@Claim(name, options?)` | any other attribute of the caller — see below | `undefined`, or `[]` for a list |
+| `@GrantedClaim(name, options?)` | any other attribute of the caller — see below | `undefined`, or `[]` for a list |
 
-### Any other claim — `@Claim`
+### Any other claim — `@GrantedClaim`
 
 Roles decide *which* actions a caller may take; claims scope *which* data. When a tenant manages several territories and may only touch those, read them from the token — or from the gateway's headers — and filter by them:
 
 ```ts
 @Get('stations')
 @GrantedTo(hasRole('FORECASTER'))
-list(@Claim('territories', { type: 'string', array: true }) territories: string[]) {
+list(@GrantedClaim('territories', { type: 'string', array: true }) territories: string[]) {
   return this.stations.find({ where: { territory: In(territories) } });
 }
 ```
@@ -239,6 +239,8 @@ The value comes from the same place as the rest of the identity: a claim of the 
 - **The wrong type** — a number where strings are expected, a list where one value is — is treated as missing, with a warning naming the claim, never its value. In a list, only the elements of the wrong type are dropped (`['FR', 42, 'GP']` gives `['FR', 'GP']`), with a warning too; a list left empty counts as missing. A number or a boolean given as a string (`'42'`, `'true'`) converts: it isn't of the wrong type.
 - Without options, the value is given as found.
 
+> Named `@Claim` in 5.8.0. That name is still exported, deprecated, until the next major version: the Quarkus implementation can't use it — `@Claim` is MicroProfile JWT's there — and both read the same way.
+
 ---
 
 ## Where the identity comes from
@@ -251,7 +253,7 @@ The value comes from the same place as the rest of the identity: a claim of the 
 
 ### Headers from a gateway
 
-Nothing to configure when your gateway sends `username`, `roles` (a JSON array) and `tenant`. Other names, or roles as a comma-separated list:
+Nothing to configure when your gateway sends `username`, `roles` and `tenant` — roles as a JSON array (`["ADMIN","USER"]`) or a comma-separated list (`ADMIN, USER`), detected. Other names:
 
 ```ts
 GrantedModule.forRoot({
@@ -259,7 +261,7 @@ GrantedModule.forRoot({
     usernameHeader: 'x-user',
     rolesHeader: 'x-roles',
     tenantHeader: 'x-tenant',
-    rolesFormat: 'csv', // 'ADMIN, USER' instead of ["ADMIN","USER"]
+    rolesFormat: 'csv', // optional: force one encoding, 'json' or 'csv'
   }),
 });
 ```
@@ -425,7 +427,7 @@ export class SessionProvider implements IGrantedPrincipalProvider {
 GrantedModule.forRoot({ principalProvider: new SessionProvider(sessions) });
 ```
 
-A `prepare()` that throws fails the request: catch what should rather give an anonymous caller. To let a caller through every rule, also implement `isBypassed(request): boolean`. For [`@Claim`](#any-other-claim--claim), implement `getClaimFromIncomingMessage(msg, name)`, returning the value as found — `@Claim` converts it; without it, a route using `@Claim` fails with an error naming the method.
+A `prepare()` that throws fails the request: catch what should rather give an anonymous caller. To let a caller through every rule, also implement `isBypassed(request): boolean`. For [`@GrantedClaim`](#any-other-claim--claim), implement `getClaimFromIncomingMessage(msg, name)`, returning the value as found — `@GrantedClaim` converts it; without it, a route using `@GrantedClaim` fails with an error naming the method.
 
 ---
 
@@ -479,7 +481,7 @@ Options are read once, at startup — there is no `forRootAsync`. Read your envi
 | `usernameHeader` | `'username'` | Missing → `'anonymous'`. |
 | `rolesHeader` | `'roles'` | Missing → `[]`. |
 | `tenantHeader` | `'tenant'` | Missing → `undefined`. |
-| `rolesFormat` | `'json'` | `'json'`: `["ADMIN","USER"]`. `'csv'`: `ADMIN, USER`. |
+| `rolesFormat` | detected | Unset: a value starting with `[` is a JSON array (`["ADMIN","USER"]`), anything else a comma-separated list (`ADMIN, USER`). `'json'` or `'csv'` forces one. Malformed JSON gives no role. |
 
 ### `GrantedJwtPrincipalProvider` — JWT
 

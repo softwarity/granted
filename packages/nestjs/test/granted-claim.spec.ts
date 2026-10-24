@@ -6,7 +6,7 @@ import { createServer, IncomingMessage } from 'http';
 import { AddressInfo } from 'net';
 import * as jwt from 'jsonwebtoken';
 import request from 'supertest';
-import { Claim } from '../src/decorators/claim.decorator';
+import { Claim, GrantedClaim } from '../src/decorators/granted-claim.decorator';
 import { GrantedTo } from '../src/decorators/granted-to.decorator';
 import { GrantedModule } from '../src/granted.module';
 import { isAuthenticated } from '../src/security/boolean-spec';
@@ -17,33 +17,38 @@ import { IGrantedPrincipalProvider } from '../src/services/igranted-info.provide
 @Controller()
 class ClaimController {
   @Get('raw')
-  raw(@Claim('realm_access.territories') value: unknown) {
+  raw(@GrantedClaim('realm_access.territories') value: unknown) {
     return { value };
   }
 
   @Get('territories')
-  territories(@Claim('territories', { type: 'string', array: true }) value: string[]) {
+  territories(@GrantedClaim('territories', { type: 'string', array: true }) value: string[]) {
     return { value };
   }
 
   @Get('max-amount')
-  maxAmount(@Claim('maxAmount', { type: 'number' }) value: number) {
+  maxAmount(@GrantedClaim('maxAmount', { type: 'number' }) value: number) {
     return { value };
   }
 
   @Get('codes')
-  codes(@Claim('codes', { type: 'number', array: true }) value: number[]) {
+  codes(@GrantedClaim('codes', { type: 'number', array: true }) value: number[]) {
     return { value };
   }
 
   @Get('auditor')
-  auditor(@Claim('auditor', { type: 'boolean' }) value: boolean) {
+  auditor(@GrantedClaim('auditor', { type: 'boolean' }) value: boolean) {
+    return { value };
+  }
+
+  @Get('legacy')
+  legacy(@Claim('territories', { type: 'string', array: true }) value: string[]) {
     return { value };
   }
 
   @Get('required')
   @GrantedTo(isAuthenticated())
-  required(@Claim('territories', { type: 'string', array: true, required: true }) value: string[]) {
+  required(@GrantedClaim('territories', { type: 'string', array: true, required: true }) value: string[]) {
     return { value };
   }
 }
@@ -63,7 +68,7 @@ async function claim(app: INestApplication, path: string, headers: Record<string
   return res.body.value;
 }
 
-describe('@Claim', () => {
+describe('@GrantedClaim', () => {
   let warn: jest.SpyInstance;
 
   beforeEach(() => {
@@ -93,6 +98,10 @@ describe('@Claim', () => {
       expect(await claim(app, '/max-amount', token)).toBe(5000);
       expect(await claim(app, '/codes', token)).toEqual([1, 2]);
       expect(await claim(app, '/auditor', token)).toBe(true);
+    });
+
+    it('still answers to its former name, @Claim', async () => {
+      expect(await claim(app, '/legacy', bearer({ sub: 'alice', territories: ['FR', 'GP'] }))).toEqual(['FR', 'GP']);
     });
 
     it('takes a single value as a list of one', async () => {
@@ -250,6 +259,6 @@ describe('@Claim', () => {
     const res = await request(app.getHttpServer()).get('/territories');
     await app.close();
     expect(res.status).toBe(500);
-    expect(String(thrown[0])).toContain("@Claim('territories') needs a principal provider implementing getClaimFromIncomingMessage");
+    expect(String(thrown[0])).toContain("@GrantedClaim('territories') needs a principal provider implementing getClaimFromIncomingMessage");
   });
 });

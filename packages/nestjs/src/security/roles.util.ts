@@ -42,3 +42,38 @@ export function resolveRoles(roles: string[], hierarchy?: Record<string, string[
   }
   return resolved;
 }
+
+/**
+ * The roles as a list of strings, however they were carried: a list (a JWT
+ * claim), a JSON array or a comma-separated string (a header, or a claim an
+ * issuer flattened). A string is never spread into its characters — that would
+ * hand a one-letter role to whoever holds a role starting with it.
+ *
+ * `format` forces one encoding; by default a value starting with `[` is read
+ * as JSON, anything else as a comma-separated list. Malformed JSON gives no
+ * role, with a warning that never shows the value.
+ */
+export function toRoleList(raw: unknown, format?: 'json' | 'csv'): string[] {
+  if (Array.isArray(raw)) {
+    return raw.filter((role): role is string => typeof role === 'string' && role.length > 0);
+  }
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    return [];
+  }
+  if (format === 'csv' || (format !== 'json' && !raw.trim().startsWith('['))) {
+    return raw
+      .split(',')
+      .map((role) => role.trim())
+      .filter((role) => role.length > 0);
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return toRoleList(parsed);
+    }
+  } catch {
+    // Reported below, like a JSON value that isn't an array.
+  }
+  console.warn('[nestjs-granted] roles are not a JSON array of strings: ignored');
+  return [];
+}

@@ -2,7 +2,7 @@ import { createParamDecorator, ExecutionContext, ForbiddenException } from '@nes
 import { IncomingMessage } from 'http';
 import { IGrantedPrincipalProvider } from '../services';
 
-export interface ClaimOptions {
+export interface GrantedClaimOptions {
   /** Expected type of the value — of each element with `array`. Unchecked when unset. */
   type?: 'string' | 'number' | 'boolean';
   /** The value is a list. A single value is taken as a list of one. */
@@ -11,7 +11,7 @@ export interface ClaimOptions {
   required?: boolean;
 }
 
-interface ClaimParam extends ClaimOptions {
+interface ClaimParam extends GrantedClaimOptions {
   name: string;
 }
 
@@ -31,18 +31,24 @@ const INVALID = Symbol('invalid');
  * type are dropped — with a warning too.
  *
  * ```ts
- * list(@Claim('territories', { type: 'string', array: true }) territories: string[])
+ * list(@GrantedClaim('territories', { type: 'string', array: true }) territories: string[])
  * ```
  */
-export function Claim(name: string, options: ClaimOptions = {}): ParameterDecorator {
+export function GrantedClaim(name: string, options: GrantedClaimOptions = {}): ParameterDecorator {
   return ClaimParam({ ...options, name });
 }
+
+/** @deprecated Renamed {@link GrantedClaim}, the name the Quarkus implementation uses too — `Claim` alone collides with MicroProfile JWT's there. Removed in the next major version. */
+export const Claim = GrantedClaim;
+
+/** @deprecated Renamed {@link GrantedClaimOptions}. Removed in the next major version. */
+export type ClaimOptions = GrantedClaimOptions;
 
 const ClaimParam = createParamDecorator((param: ClaimParam, ctx: ExecutionContext) => {
   const incomingMessage: IncomingMessage = ctx.switchToHttp().getRequest<IncomingMessage>();
   const grantedPrincipalProvider: IGrantedPrincipalProvider = incomingMessage['grantedPrincipalProvider'];
   if (!grantedPrincipalProvider?.getClaimFromIncomingMessage) {
-    throw new Error(`[nestjs-granted] @Claim('${param.name}') needs a principal provider implementing getClaimFromIncomingMessage`);
+    throw new Error(`[nestjs-granted] @GrantedClaim('${param.name}') needs a principal provider implementing getClaimFromIncomingMessage`);
   }
   const { value, dropped } = convert(grantedPrincipalProvider.getClaimFromIncomingMessage(incomingMessage, param.name), param);
   // Never log the value: it comes from the caller's token or headers.
@@ -61,7 +67,7 @@ const ClaimParam = createParamDecorator((param: ClaimParam, ctx: ExecutionContex
 });
 
 /** The converted value, and how many list elements of the wrong type were dropped from it. */
-function convert(raw: unknown, { type, array }: ClaimOptions): { value: unknown; dropped?: number } {
+function convert(raw: unknown, { type, array }: GrantedClaimOptions): { value: unknown; dropped?: number } {
   if (raw == null || raw === '') {
     return { value: undefined };
   }
@@ -94,7 +100,7 @@ function parseList(raw: string): unknown[] | typeof INVALID {
     .filter((item) => item.length > 0);
 }
 
-function scalar(value: unknown, type: ClaimOptions['type']): unknown {
+function scalar(value: unknown, type: GrantedClaimOptions['type']): unknown {
   if (!type || typeof value === type) {
     return value;
   }

@@ -3,6 +3,7 @@ import { Request } from 'express';
 import * as fs from 'fs';
 import { IncomingMessage } from 'http';
 import { Algorithm, decode, JsonWebTokenError, Jwt, JwtPayload, NotBeforeError, TokenExpiredError, verify, VerifyOptions } from 'jsonwebtoken';
+import { toRoleList } from '../security/roles.util';
 import { IGrantedPrincipalProvider } from './igranted-info.provider';
 
 /** `jsonwebtoken`'s algorithms, plus EdDSA — only with `jwksUri`, where Node's `crypto` verifies it. */
@@ -492,7 +493,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
   }
 
   getRolesFromRequest(request: Request): string[] {
-    return this.resolveClaim(this.initFromRequest(request), this.rolesClaim) || [];
+    return toRoleList(this.resolveClaim(this.initFromRequest(request), this.rolesClaim));
   }
 
   getTenantFromRequest(request: Request): string | undefined {
@@ -513,7 +514,7 @@ export class GrantedJwtPrincipalProvider implements IGrantedPrincipalProvider {
   }
 
   getRolesFromIncomingMessage(incomingMessage: IncomingMessage): string[] {
-    return this.resolveClaim(this.initFromIncomingMessage(incomingMessage), this.rolesClaim) || [];
+    return toRoleList(this.resolveClaim(this.initFromIncomingMessage(incomingMessage), this.rolesClaim));
   }
 
   getTenantFromIncomingMessage(incomingMessage: IncomingMessage): string | undefined {

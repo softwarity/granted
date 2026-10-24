@@ -1,12 +1,15 @@
 import { Request } from 'express';
 import { IncomingMessage } from 'http';
+import { toRoleList } from '../security/roles.util';
 import { IGrantedPrincipalProvider } from './igranted-info.provider';
 
 export interface GrantedPrincipalProviderConfig {
   /**
-   * How the roles header is encoded:
-   *  - `'json'` (default): a JSON array, e.g. `["ROLE1","ROLE2"]`
-   *  - `'csv'`: a comma-separated string, e.g. `ROLE1, ROLE2`
+   * How the roles header is encoded. Unset (the default), it is detected: a
+   * value starting with `[` is a JSON array (`["ROLE1","ROLE2"]`), anything else
+   * a comma-separated list (`ROLE1, ROLE2`). Set it to force one of them:
+   *  - `'json'`: a JSON array only
+   *  - `'csv'`: a comma-separated list only
    */
   rolesFormat?: 'json' | 'csv';
   /** Header carrying the username. Default `'username'`. */
@@ -23,7 +26,7 @@ export interface GrantedPrincipalProviderConfig {
  * configurable; defaults are `username`, `roles`, `tenant`.
  *
  *  - username header (fallback `'anonymous'`)
- *  - roles    header — JSON array or CSV depending on `rolesFormat` (fallback `[]`)
+ *  - roles    header — JSON array or CSV, detected unless `rolesFormat` says (fallback `[]`)
  *  - tenant   header (optional, multi-tenant context)
  */
 export class GrantedPrincipalProvider implements IGrantedPrincipalProvider {
@@ -61,7 +64,7 @@ export class GrantedPrincipalProvider implements IGrantedPrincipalProvider {
     return this.readHeader(incomingMessage, this.tenantHeader) || undefined;
   }
 
-  /** The header of the same name, as a string — `@Claim` parses it. */
+  /** The header of the same name, as a string — `@GrantedClaim` parses it. */
   getClaimFromIncomingMessage(incomingMessage: IncomingMessage, name: string): string | undefined {
     return this.readHeader(incomingMessage, name);
   }
@@ -72,15 +75,6 @@ export class GrantedPrincipalProvider implements IGrantedPrincipalProvider {
   }
 
   private parseRoles(raw?: string): string[] {
-    if (!raw) {
-      return [];
-    }
-    if (this.config.rolesFormat === 'csv') {
-      return raw
-        .split(',')
-        .map((role) => role.trim())
-        .filter((role) => role.length > 0);
-    }
-    return JSON.parse(raw);
+    return toRoleList(raw, this.config.rolesFormat);
   }
 }
