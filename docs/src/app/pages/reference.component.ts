@@ -30,7 +30,7 @@ import { RouterLink } from '@angular/router';
         <tr><td><code>usernameHeader</code></td><td><code>'username'</code></td><td>Missing → <code>'anonymous'</code>.</td></tr>
         <tr><td><code>rolesHeader</code></td><td><code>'roles'</code></td><td>Missing → <code>[]</code>.</td></tr>
         <tr><td><code>tenantHeader</code></td><td><code>'tenant'</code></td><td>Missing → <code>undefined</code>.</td></tr>
-        <tr><td><code>rolesFormat</code></td><td><code>'json'</code></td><td><code>'json'</code>: <code>["ADMIN","USER"]</code>. <code>'csv'</code>: <code>ADMIN, USER</code>.</td></tr>
+        <tr><td><code>rolesFormat</code></td><td>detected</td><td>Unset: a value starting with <code>[</code> is a JSON array (<code>["ADMIN","USER"]</code>), anything else a comma-separated list (<code>ADMIN, USER</code>). <code>'json'</code> or <code>'csv'</code> forces one. Malformed JSON gives no role.</td></tr>
       </tbody>
     </table>
 

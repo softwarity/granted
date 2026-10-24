@@ -11,8 +11,12 @@ import Prism from 'prismjs';
 import 'prismjs/components/prism-typescript';
 import 'prismjs/components/prism-bash';
 import 'prismjs/components/prism-json';
+// The Quarkus page: Java, application.properties, and the pom's XML (markup, in Prism's core).
+import 'prismjs/components/prism-java';
+import 'prismjs/components/prism-properties';
+import 'prismjs/components/prism-go';
 
-export type CodeLang = 'ts' | 'typescript' | 'bash' | 'shell' | 'json' | 'text';
+export type CodeLang = 'ts' | 'typescript' | 'bash' | 'shell' | 'json' | 'text' | 'java' | 'properties' | 'xml' | 'go';
 
 /**
  * Renders a Prism-highlighted code block with the Catppuccin Mocha theme.

@@ -53,7 +53,7 @@ import { CodeComponent } from '../code/code.component';
       <strong>&#64;softwarity/nestjs-granted</strong> decides, route by route, who may call your NestJS API.
       Put <code>&#64;GrantedTo(...)</code> on a route: a global guard checks it on every request. Your handlers
       read the caller with <code>&#64;Username()</code>, <code>&#64;Roles()</code>, <code>&#64;Tenant()</code> — and any
-      other claim with <code>&#64;Claim('territories')</code>.
+      other claim with <code>&#64;GrantedClaim('territories')</code>.
     </p>
     <div class="callout">
       It doesn't log anyone in. Something in front of your service — a gateway, an identity provider — has
@@ -109,7 +109,7 @@ export class ReportsController &#123;
       <a routerLink="/nestjs/parameter-decorators" class="card">
         <span class="card-icon material-symbols-outlined">badge</span>
         <span class="card-title">Read the caller</span>
-        <span class="card-desc"><code>&#64;Username()</code>, <code>&#64;Roles()</code>, <code>&#64;Tenant()</code>, <code>&#64;Claim()</code> in a handler.</span>
+        <span class="card-desc"><code>&#64;Username()</code>, <code>&#64;Roles()</code>, <code>&#64;Tenant()</code>, <code>&#64;GrantedClaim()</code> in a handler.</span>
       </a>
       <a routerLink="/nestjs/roles" class="card">
         <span class="card-icon material-symbols-outlined">account_tree</span>

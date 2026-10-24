@@ -31,6 +31,14 @@ export const routes: Routes = [
     path: 'nestjs/reference',
     loadComponent: () => import('./pages/reference.component').then((m) => m.ReferenceComponent),
   },
+  {
+    path: 'quarkus',
+    loadComponent: () => import('./pages/quarkus.component').then((m) => m.QuarkusComponent),
+  },
+  {
+    path: 'go',
+    loadComponent: () => import('./pages/go.component').then((m) => m.GoComponent),
+  },
   // The NestJS pages, from before the site covered several implementations.
   { path: 'securing-endpoints', redirectTo: 'nestjs/securing-endpoints' },
   { path: 'parameter-decorators', redirectTo: 'nestjs/parameter-decorators' },

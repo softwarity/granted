@@ -17,7 +17,7 @@ me(&#64;Username() username: string, &#64;Roles() roles: string[], &#64;Tenant()
         <tr><td><code>&#64;Username()</code></td><td><code>string</code></td><td><code>'anonymous'</code></td></tr>
         <tr><td><code>&#64;Roles()</code></td><td><code>string[]</code> — the roles the rules see, after <a routerLink="/nestjs/roles">hierarchy and filtering</a></td><td><code>[]</code></td></tr>
         <tr><td><code>&#64;Tenant()</code></td><td><code>string | undefined</code></td><td><code>undefined</code></td></tr>
-        <tr><td><code>&#64;Claim(name, options?)</code></td><td>any other attribute of the caller — see below</td><td><code>undefined</code>, or <code>[]</code> for a list</td></tr>
+        <tr><td><code>&#64;GrantedClaim(name, options?)</code></td><td>any other attribute of the caller — see below</td><td><code>undefined</code>, or <code>[]</code> for a list</td></tr>
       </tbody>
     </table>
     <p>Where the values come from — headers, a JWT — is set once in <code>forRoot</code>: see <a routerLink="/nestjs/info-providers">Where the identity comes from</a>.</p>
@@ -30,7 +30,7 @@ list(&#64;Tenant() tenant: string) &#123;
   return this.invoices.find(&#123; where: &#123; tenantId: tenant &#125; &#125;);
 &#125;</app-code>
 
-    <h3>Any other claim — &#64;Claim</h3>
+    <h3>Any other claim — &#64;GrantedClaim</h3>
     <p>
       Roles decide <em>which</em> actions a caller may take; claims scope <em>which</em> data. When a tenant
       manages several territories and may only touch those, read them from the token — or from the gateway's
@@ -38,7 +38,7 @@ list(&#64;Tenant() tenant: string) &#123;
     </p>
     <app-code lang="ts">&#64;Get('stations')
 &#64;GrantedTo(hasRole('FORECASTER'))
-list(&#64;Claim('territories', &#123; type: 'string', array: true &#125;) territories: string[]) &#123;
+list(&#64;GrantedClaim('territories', &#123; type: 'string', array: true &#125;) territories: string[]) &#123;
   return this.stations.find(&#123; where: &#123; territory: In(territories) &#125; &#125;);
 &#125;</app-code>
     <p>
@@ -71,10 +71,15 @@ list(&#64;Claim('territories', &#123; type: 'string', array: true &#125;) territ
       </li>
       <li>Without options, the value is given as found.</li>
     </ul>
+    <div class="callout">
+      Named <code>&#64;Claim</code> in 5.8.0. That name is still exported, deprecated, until the next major
+      version: the Quarkus implementation can't use it — <code>&#64;Claim</code> is MicroProfile JWT's there —
+      and both read the same way.
+    </div>
     <p>
       With <a routerLink="/nestjs/info-providers">your own provider</a>, implement
       <code>getClaimFromIncomingMessage(msg, name)</code>, returning the value as found; without it, a route
-      using <code>&#64;Claim</code> fails with an error naming the method.
+      using <code>&#64;GrantedClaim</code> fails with an error naming the method.
     </p>
   `,
 })

@@ -23,9 +23,7 @@ interface DocLink {
   styleUrl: './app.component.scss',
 })
 export class AppComponent {
-  // One entry per implementation, each followed by its own pages. Quarkus and Go
-  // get theirs when their implementation ships: no page documents an API that
-  // doesn't exist yet.
+  // One entry per implementation, each followed by its own pages.
   protected readonly links: DocLink[] = [
     { path: '/', label: 'Overview', icon: 'rocket_launch' },
     { path: '/nestjs', label: 'NestJS', brand: 'nestjs' },
@@ -34,5 +32,7 @@ export class AppComponent {
     { path: '/nestjs/info-providers', label: 'Where the identity comes from', icon: 'key', child: true },
     { path: '/nestjs/roles', label: 'Roles', icon: 'account_tree', child: true },
     { path: '/nestjs/reference', label: 'Options reference', icon: 'settings', child: true },
+    { path: '/quarkus', label: 'Quarkus', brand: 'quarkus' },
+    { path: '/go', label: 'Go', brand: 'go' },
   ];
 }

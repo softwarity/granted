@@ -18,15 +18,16 @@ import { CodeComponent } from '../code/code.component';
 
     <h3 id="headers">Headers from a gateway</h3>
     <p>
-      Nothing to configure when your gateway sends <code>username</code>, <code>roles</code> (a JSON array) and
-      <code>tenant</code>. Other names, or roles as a comma-separated list:
+      Nothing to configure when your gateway sends <code>username</code>, <code>roles</code> and
+      <code>tenant</code> — roles as a JSON array (<code>["ADMIN","USER"]</code>) or a comma-separated list
+      (<code>ADMIN, USER</code>), detected. Other names:
     </p>
     <app-code lang="ts">GrantedModule.forRoot(&#123;
   principalProvider: new GrantedPrincipalProvider(&#123;
     usernameHeader: 'x-user',
     rolesHeader: 'x-roles',
     tenantHeader: 'x-tenant',
-    rolesFormat: 'csv', // 'ADMIN, USER' instead of ["ADMIN","USER"]
+    rolesFormat: 'csv', // optional: force one encoding, 'json' or 'csv'
   &#125;),
 &#125;);</app-code>
     <div class="callout warn">
