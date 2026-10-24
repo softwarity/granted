@@ -1,0 +1,645 @@
+import { generateKeyPairSync, KeyObject, sign as signBytes } from 'crypto';
+import { mkdtempSync, writeFileSync } from 'fs';
+import { createServer } from 'http';
+import { AddressInfo } from 'net';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import * as jwt from 'jsonwebtoken';
+import { GrantedJwtPrincipalProvider, GrantedJwtPrincipalProviderConfig, JwtAlgorithm } from '../src/services/granted-info.jwt-provider';
+
+interface SigningKey {
+  kid: string;
+  alg: JwtAlgorithm;
+  privateKey: KeyObject;
+  publicKey: KeyObject;
+  jwk: Record<string, unknown>;
+}
+
+function signingKey(kid: string, alg: JwtAlgorithm, { privateKey, publicKey }: { privateKey: KeyObject; publicKey: KeyObject }): SigningKey {
+  return { kid, alg, privateKey, publicKey, jwk: { ...publicKey.export({ format: 'jwk' }), kid, use: 'sig', alg } };
+}
+
+function rsaKey(kid: string): SigningKey {
+  return signingKey(kid, 'RS256', generateKeyPairSync('rsa', { modulusLength: 2048 }));
+}
+
+function ecKey(kid: string): SigningKey {
+  return signingKey(kid, 'ES256', generateKeyPairSync('ec', { namedCurve: 'P-256' }));
+}
+
+function edKey(kid: string): SigningKey {
+  return signingKey(kid, 'EdDSA', generateKeyPairSync('ed25519'));
+}
+
+/** The same key, published without `alg` — as Microsoft Entra ID does. */
+function withoutAlg({ alg: _alg, ...jwk }: Record<string, unknown>): Record<string, unknown> {
+  return jwk;
+}
+
+const base64url = (value: object) => Buffer.from(JSON.stringify(value)).toString('base64url');
+
+/** `jsonwebtoken` can't sign EdDSA: the token is assembled by hand. */
+function signEdDsa(key: SigningKey, payload: object): string {
+  const signed = `${base64url({ alg: 'EdDSA', typ: 'JWT', kid: key.kid })}.${base64url(payload)}`;
+  return `${signed}.${signBytes(null, Buffer.from(signed), key.privateKey).toString('base64url')}`;
+}
+
+function reqWithToken(token: string) {
+  const headers = { authorization: `Bearer ${token}` };
+  return { header: (name: string) => headers[name.toLowerCase()], headers } as any;
+}
+
+describe('GrantedJwtPrincipalProvider — JWKS', () => {
+  const keyA = rsaKey('key-a');
+  const keyB = rsaKey('key-b');
+  const outsider = rsaKey('outsider');
+
+  // Local IdP stub: serves a mutable JWK Set and counts the fetches. `routes`
+  // overrides the response of a path: a body, or an HTTP status.
+  let published: Record<string, unknown>[];
+  let routes: Record<string, object | number>;
+  let status: number;
+  let fetches: number;
+  let requested: string[];
+  /** The `Authorization` header of each request, by path. */
+  let authorizations: Record<string, string | undefined>;
+  const server = createServer((req, res) => {
+    if (req.url === '/hang') {
+      return; // never answers — exercises jwksTimeout
+    }
+    fetches++;
+    requested.push(req.url);
+    authorizations[req.url] = req.headers.authorization;
+    const route = routes[req.url];
+    res.writeHead(typeof route === 'number' ? route : status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(typeof route === 'object' ? route : { keys: published }));
+  });
+  let baseUrl: string;
+
+  // Clock offset, to cross the cooldown and cache max age without waiting.
+  const realNow = Date.now.bind(Date);
+  let elapsed: number;
+  const advance = (ms: number) => (elapsed += ms);
+  let warn: jest.SpyInstance;
+
+  beforeAll((done) => {
+    server.listen(0, '127.0.0.1', () => {
+      baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      done();
+    });
+  });
+
+  afterAll((done) => {
+    server.closeAllConnections();
+    server.close(done);
+  });
+
+  beforeEach(() => {
+    published = [keyA.jwk];
+    routes = {};
+    status = 200;
+    fetches = 0;
+    requested = [];
+    authorizations = {};
+    elapsed = 0;
+    jest.spyOn(Date, 'now').mockImplementation(() => realNow() + elapsed);
+    warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  function provider(conf: GrantedJwtPrincipalProviderConfig = {}) {
+    return new GrantedJwtPrincipalProvider({ jwksUri: `${baseUrl}/jwks.json`, ...conf });
+  }
+
+  function sign(key: SigningKey, payload: object = { sub: 'alice', roles: ['ADMIN'] }, options: jwt.SignOptions = { keyid: key.kid }) {
+    if (key.alg === 'EdDSA') {
+      return signEdDsa(key, payload);
+    }
+    return jwt.sign(payload, key.privateKey, { algorithm: key.alg, ...options });
+  }
+
+  /** Goes through prepare() first, as the guard does. */
+  async function usernameOf(p: GrantedJwtPrincipalProvider, token: string): Promise<string> {
+    const req = reqWithToken(token);
+    await p.prepare(req);
+    return p.getUsernameFromRequest(req);
+  }
+
+  it('verifies a token signed by a key of the set, fetching the set only once', async () => {
+    const p = provider();
+    const req = reqWithToken(sign(keyA));
+    await p.prepare(req);
+    expect(p.getUsernameFromRequest(req)).toBe('alice');
+    expect(p.getRolesFromIncomingMessage(req)).toEqual(['ADMIN']);
+    expect(await usernameOf(p, sign(keyA))).toBe('alice');
+    expect(fetches).toBe(1);
+  });
+
+  it('re-fetches the set when a token is signed by a key rotated in since the last fetch', async () => {
+    const p = provider();
+    expect(await usernameOf(p, sign(keyA))).toBe('alice');
+    published = [keyA.jwk, keyB.jwk];
+    advance(31_000);
+    expect(await usernameOf(p, sign(keyB))).toBe('alice');
+    expect(fetches).toBe(2);
+  });
+
+  it('re-fetches at most once per cooldown, however many unknown kids come in', async () => {
+    const p = provider();
+    expect(await usernameOf(p, sign(keyA))).toBe('alice');
+    advance(31_000);
+    for (const kid of ['forged-1', 'forged-2', 'forged-3']) {
+      expect(await usernameOf(p, sign(outsider, { sub: 'mallory' }, { keyid: kid }))).toBe('anonymous');
+    }
+    expect(fetches).toBe(2);
+  });
+
+  it('shares a single fetch between concurrent requests', async () => {
+    const p = provider();
+    const names = await Promise.all([1, 2, 3].map(() => usernameOf(p, sign(keyA))));
+    expect(names).toEqual(['alice', 'alice', 'alice']);
+    expect(fetches).toBe(1);
+  });
+
+  it('re-fetches the set once jwksCacheMaxAge has elapsed, dropping withdrawn keys', async () => {
+    const p = provider({ jwksCacheMaxAge: 60_000 });
+    expect(await usernameOf(p, sign(keyA))).toBe('alice');
+    published = [keyB.jwk];
+    advance(61_000);
+    expect(await usernameOf(p, sign(keyA))).toBe('anonymous');
+    expect(fetches).toBe(2);
+  });
+
+  it('keeps the last known keys when a fetch fails', async () => {
+    const p = provider({ jwksCacheMaxAge: 60_000 });
+    expect(await usernameOf(p, sign(keyA))).toBe('alice');
+    status = 503;
+    advance(61_000);
+    expect(await usernameOf(p, sign(keyA))).toBe('alice');
+    expect(fetches).toBe(2);
+    expect(warn.mock.calls.flat().join(' ')).toContain('JWKS fetch failed');
+  });
+
+  it('does not re-fetch for an expired token — its key is known', async () => {
+    const p = provider();
+    expect(await usernameOf(p, sign(keyA))).toBe('alice');
+    advance(31_000);
+    const expired = sign(keyA, { sub: 'alice', exp: Math.floor(Date.now() / 1000) - 60 });
+    expect(await usernameOf(p, expired)).toBe('anonymous');
+    expect(fetches).toBe(1);
+    expect(warn.mock.calls.flat().join(' ')).toContain('jwt expired');
+  });
+
+  it('does not re-fetch for a token rejected on its audience — its key is known', async () => {
+    const p = provider({ audience: 'orders-api' });
+    expect(await usernameOf(p, sign(keyA, { sub: 'alice', aud: 'orders-api' }))).toBe('alice');
+    advance(31_000);
+    expect(await usernameOf(p, sign(keyA, { sub: 'alice', aud: 'billing-api' }))).toBe('anonymous');
+    expect(fetches).toBe(1);
+    expect(warn.mock.calls.flat().join(' ')).toContain('jwt audience invalid');
+  });
+
+  it('tries every key when the token carries no kid', async () => {
+    published = [keyA.jwk, keyB.jwk];
+    expect(await usernameOf(provider(), sign(keyB, { sub: 'alice' }, {}))).toBe('alice');
+  });
+
+  it('ignores symmetric and encryption keys published in the set', async () => {
+    const secret = 'shared-secret';
+    published = [
+      { kty: 'oct', k: Buffer.from(secret).toString('base64url'), kid: 'hmac' },
+      { ...keyB.jwk, use: 'enc' },
+    ];
+    expect(await usernameOf(provider(), jwt.sign({ sub: 'mallory' }, secret, { algorithm: 'HS256', keyid: 'hmac' }))).toBe('anonymous');
+    expect(await usernameOf(provider(), sign(keyB))).toBe('anonymous');
+  });
+
+  it('yields anonymous when the JWKS endpoint times out', async () => {
+    const p = new GrantedJwtPrincipalProvider({ jwksUri: `${baseUrl}/hang`, jwksTimeout: 100 });
+    expect(await usernameOf(p, sign(keyA))).toBe('anonymous');
+    expect(warn.mock.calls.flat().join(' ')).toContain('JWKS fetch failed');
+  });
+
+  it('never falls back to an unverified decode, even when a getter runs without prepare()', async () => {
+    const p = provider();
+    expect(p.getUsernameFromRequest(reqWithToken(sign(keyA)))).toBe('anonymous');
+    expect(fetches).toBe(0);
+    // Once the keys are cached, a getter can verify on its own.
+    await usernameOf(p, sign(keyA));
+    expect(p.getUsernameFromRequest(reqWithToken(sign(keyA)))).toBe('alice');
+  });
+
+  it('treats a request without a token as anonymous, without fetching or logging', async () => {
+    const p = provider();
+    const req = { header: () => undefined, headers: {} } as any;
+    await p.prepare(req);
+    expect(p.getUsernameFromRequest(req)).toBe('anonymous');
+    expect(fetches).toBe(0);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('never logs the token', async () => {
+    const token = sign(outsider, { sub: 'mallory' });
+    await usernameOf(provider(), token);
+    expect(warn.mock.calls.flat().join(' ')).not.toContain(token);
+  });
+
+  it('works through the presets', async () => {
+    const p = GrantedJwtPrincipalProvider.keycloak({ jwksUri: `${baseUrl}/jwks.json` });
+    expect(await usernameOf(p, sign(keyA, { preferred_username: 'alice', realm_access: { roles: ['admin'] } }))).toBe('alice');
+  });
+
+  it('rejects jwksUri combined with a PEM key', () => {
+    expect(() => new GrantedJwtPrincipalProvider({ jwksUri: `${baseUrl}/jwks.json`, base64Key: 'pem' })).toThrow('jwksUri cannot be combined');
+  });
+
+  describe('algorithm', () => {
+    const ec = ecKey('key-ec');
+    const ed = edKey('key-ed');
+    const warnings = () => warn.mock.calls.flat().join(' ');
+
+    beforeEach(() => {
+      published = [keyA.jwk, ec.jwk, ed.jwk];
+    });
+
+    it('verifies RS256, ES256 and EdDSA tokens against the same set, with no algorithm configured', async () => {
+      const p = provider();
+      expect(await usernameOf(p, sign(keyA, { sub: 'rsa' }))).toBe('rsa');
+      expect(await usernameOf(p, sign(ec, { sub: 'ec' }))).toBe('ec');
+      expect(await usernameOf(p, sign(ed, { sub: 'ed' }))).toBe('ed');
+      expect(fetches).toBe(1);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('rejects a token whose kid is not in the set', async () => {
+      expect(await usernameOf(provider(), sign(keyA, { sub: 'alice' }, { keyid: 'unknown' }))).toBe('anonymous');
+      expect(warnings()).toContain('no JWKS key matches the token');
+    });
+
+    it('rejects a token announcing another algorithm than its key', async () => {
+      const p = provider();
+      // Each of these would verify if the token's `alg` were trusted.
+      const rs384 = jwt.sign({ sub: 'mallory' }, keyA.privateKey, { algorithm: 'RS384', keyid: keyA.kid });
+      const hs256 = jwt.sign({ sub: 'mallory' }, keyA.publicKey.export({ type: 'spki', format: 'pem' }), { algorithm: 'HS256', keyid: keyA.kid });
+      const unsigned = jwt.sign({ sub: 'mallory' }, null, { algorithm: 'none', keyid: keyA.kid });
+      for (const token of [rs384, hs256, unsigned]) {
+        warn.mockClear();
+        expect(await usernameOf(p, token)).toBe('anonymous');
+        expect(warnings()).toContain('invalid algorithm');
+      }
+    });
+
+    it('used as an allowlist, rejects the keys of any other algorithm', async () => {
+      const p = provider({ algorithm: ['RS256', 'EdDSA'] });
+      expect(await usernameOf(p, sign(keyA))).toBe('alice');
+      expect(await usernameOf(p, sign(ed))).toBe('alice');
+      expect(await usernameOf(p, sign(ec))).toBe('anonymous');
+      expect(warnings()).toContain('invalid algorithm');
+      expect(await usernameOf(provider({ algorithm: 'ES256' }), sign(ec))).toBe('alice');
+      expect(await usernameOf(provider({ algorithm: 'ES256' }), sign(keyA))).toBe('anonymous');
+    });
+
+    it('refuses none and HS* at construction, and EdDSA without a JWKS', () => {
+      expect(() => provider({ algorithm: 'HS256' })).toThrow('HS256 cannot be used with jwksUri');
+      expect(() => provider({ algorithm: ['RS256', 'none'] })).toThrow('none cannot be used with jwksUri');
+      expect(() => provider({ algorithm: [] })).toThrow('empty list');
+      expect(() => new GrantedJwtPrincipalProvider({ base64Key: 'pem', algorithm: 'EdDSA' })).toThrow('only supported with jwksUri');
+    });
+
+    it('infers the algorithm of a key published without alg from its type', async () => {
+      published = [keyA.jwk, ec.jwk, ed.jwk].map(withoutAlg);
+      const p = provider();
+      expect(await usernameOf(p, sign(keyA))).toBe('alice');
+      expect(await usernameOf(p, sign(ec))).toBe('alice');
+      expect(await usernameOf(p, sign(ed))).toBe('alice');
+      // An RSA key without alg is taken as RS256, whatever the token says.
+      expect(await usernameOf(p, jwt.sign({ sub: 'alice' }, keyA.privateKey, { algorithm: 'RS384', keyid: keyA.kid }))).toBe('anonymous');
+    });
+
+    it('lets the allowlist choose the algorithm of a key published without alg', async () => {
+      published = [withoutAlg(keyA.jwk)];
+      const ps256 = jwt.sign({ sub: 'alice' }, keyA.privateKey, { algorithm: 'PS256', keyid: keyA.kid });
+      expect(await usernameOf(provider(), ps256)).toBe('anonymous');
+      expect(await usernameOf(provider({ algorithm: 'PS256' }), ps256)).toBe('alice');
+      expect(await usernameOf(provider({ algorithm: 'PS256' }), sign(keyA))).toBe('anonymous');
+    });
+
+    it('ignores a key whose alg its type cannot verify', async () => {
+      published = [
+        { ...keyA.jwk, alg: 'ES256' },
+        { ...ec.jwk, alg: 'HS256' },
+      ];
+      expect(await usernameOf(provider(), sign(keyA))).toBe('anonymous');
+      expect(await usernameOf(provider(), sign(ec))).toBe('anonymous');
+    });
+
+    describe('EdDSA', () => {
+      it('rejects a tampered token', async () => {
+        const [header, , signature] = sign(ed, { sub: 'alice' }).split('.');
+        expect(await usernameOf(provider(), `${header}.${base64url({ sub: 'mallory' })}.${signature}`)).toBe('anonymous');
+        expect(warnings()).toContain('invalid signature');
+      });
+
+      it('rejects a token signed by another Ed25519 key', async () => {
+        const forged = signEdDsa({ ...edKey('other'), kid: ed.kid }, { sub: 'mallory' });
+        expect(await usernameOf(provider(), forged)).toBe('anonymous');
+      });
+
+      it('checks the validity dates, without re-fetching — the key is known', async () => {
+        const p = provider();
+        const now = Math.floor(Date.now() / 1000);
+        expect(await usernameOf(p, sign(ed, { sub: 'alice', nbf: now - 60, exp: now + 60 }))).toBe('alice');
+        advance(31_000);
+        expect(await usernameOf(p, sign(ed, { sub: 'alice', exp: now - 60 }))).toBe('anonymous');
+        expect(await usernameOf(p, sign(ed, { sub: 'alice', nbf: now + 600 }))).toBe('anonymous');
+        expect(fetches).toBe(1);
+        expect(warnings()).toMatch(/jwt expired[\s\S]*jwt not active/);
+      });
+
+      it('checks issuer and audience when configured', async () => {
+        const p = provider({ issuer: ['https://idp.acme', 'https://gateway.acme'], audience: /^orders-/ });
+        const claims = { sub: 'alice', iss: 'https://gateway.acme', aud: ['billing-api', 'orders-api'] };
+        expect(await usernameOf(p, sign(ed, claims))).toBe('alice');
+        expect(await usernameOf(p, sign(ed, { ...claims, iss: 'https://evil.example' }))).toBe('anonymous');
+        expect(await usernameOf(p, sign(ed, { ...claims, aud: 'billing-api' }))).toBe('anonymous');
+        expect(await usernameOf(p, sign(ed, { sub: 'alice' }))).toBe('anonymous');
+        expect(warnings()).toMatch(/issuer invalid[\s\S]*audience invalid/);
+      });
+    });
+  });
+
+  describe('discoveryUris', () => {
+    // Fetched in-cluster, at 127.0.0.1, while the issuers are public URLs.
+    const issuerA = 'https://idp-a.example.com';
+    const issuerB = 'https://login.partner.com/b';
+    const warnings = () => warn.mock.calls.flat().join(' ');
+
+    beforeEach(() => {
+      routes = {
+        '/a/.well-known/openid-configuration': { issuer: issuerA, jwks_uri: `${baseUrl}/a/certs` },
+        '/a/certs': { keys: [keyA.jwk] },
+        '/b/.well-known/openid-configuration': { issuer: issuerB, jwks_uri: `${baseUrl}/b/certs` },
+        '/b/certs': { keys: [keyB.jwk] },
+      };
+    });
+
+    function openid(conf: GrantedJwtPrincipalProviderConfig = {}) {
+      return new GrantedJwtPrincipalProvider({ discoveryUris: [`${baseUrl}/a/.well-known/openid-configuration`, `${baseUrl}/b/.well-known/openid-configuration`], ...conf });
+    }
+
+    it('verifies the tokens of each provider with its own keys, under the issuer its document announces', async () => {
+      const p = openid();
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(requested.sort()).toEqual(['/a/.well-known/openid-configuration', '/a/certs', '/b/.well-known/openid-configuration', '/b/certs']);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('never verifies a token with the keys of another provider than its issuer', async () => {
+      const p = openid();
+      expect(await usernameOf(p, sign(keyA, { sub: 'mallory', iss: issuerB }))).toBe('anonymous');
+      expect(warnings()).toContain('no JWKS key matches the token');
+      expect(requested).not.toContain('/a/certs');
+    });
+
+    it('rejects an unknown issuer without fetching any key, and never fetches a URL from the token', async () => {
+      const p = openid();
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      requested = [];
+      for (const iss of [`${baseUrl}/evil`, undefined]) {
+        expect(await usernameOf(p, sign(keyA, { sub: 'mallory', iss }))).toBe('anonymous');
+      }
+      expect(requested).toEqual([]);
+      expect(warnings()).toContain(`jwt issuer invalid. expected: ${issuerA} or ${issuerB}`);
+    });
+
+    it('takes the URL the document lives under, with or without a trailing slash', async () => {
+      const p = new GrantedJwtPrincipalProvider({ discoveryUris: [`${baseUrl}/a`, `${baseUrl}/b/`] });
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+    });
+
+    it('fetches each document once for concurrent requests', async () => {
+      const p = openid();
+      const names = await Promise.all([1, 2, 3].map(() => usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))));
+      expect(names).toEqual(['alice', 'alice', 'alice']);
+      expect(requested.filter((url) => url === '/a/.well-known/openid-configuration')).toHaveLength(1);
+    });
+
+    it('keeps serving the other providers while one document fails, and retries it after the cooldown', async () => {
+      routes['/b/.well-known/openid-configuration'] = 503;
+      const p = openid();
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('anonymous');
+      expect(warnings()).toContain('OpenID configuration fetch failed');
+      routes['/b/.well-known/openid-configuration'] = { issuer: issuerB, jwks_uri: `${baseUrl}/b/certs` };
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('anonymous');
+      advance(31_000);
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+    });
+
+    it('rejects a document without issuer or jwks_uri', async () => {
+      routes['/a/.well-known/openid-configuration'] = { jwks_uri: `${baseUrl}/a/certs` };
+      expect(await usernameOf(openid(), sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('anonymous');
+      expect(warnings()).toContain('no "issuer" or "jwks_uri" in the response');
+    });
+
+    it('follows the jwks_uri of a re-fetched document', async () => {
+      const p = openid({ jwksCacheMaxAge: 60_000 });
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      routes['/a/.well-known/openid-configuration'] = { issuer: issuerA, jwks_uri: `${baseUrl}/a/certs-2` };
+      routes['/a/certs-2'] = { keys: [outsider.jwk] };
+      advance(61_000);
+      expect(await usernameOf(p, sign(outsider, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(requested).toContain('/a/certs-2');
+    });
+
+    it('verifies from the cache alone when a getter runs without prepare()', async () => {
+      const p = openid();
+      const token = sign(keyA, { sub: 'alice', iss: issuerA });
+      expect(p.getUsernameFromRequest(reqWithToken(token))).toBe('anonymous');
+      expect(fetches).toBe(0);
+      await usernameOf(p, token);
+      expect(p.getUsernameFromRequest(reqWithToken(token))).toBe('alice');
+    });
+
+    it('checks the audience of every provider', async () => {
+      const p = openid({ audience: 'orders-api' });
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB, aud: 'orders-api' }))).toBe('bob');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB, aud: 'billing-api' }))).toBe('anonymous');
+      expect(warnings()).toContain('jwt audience invalid');
+    });
+
+    it('cohabits with jwksUri, whose keys only verify the tokens of its issuer', async () => {
+      published = [outsider.jwk];
+      const p = openid({ jwksUri: `${baseUrl}/jwks.json`, issuer: 'https://gateway.acme' });
+      expect(await usernameOf(p, sign(outsider, { sub: 'carol', iss: 'https://gateway.acme' }))).toBe('carol');
+      expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+      expect(await usernameOf(p, sign(outsider, { sub: 'mallory', iss: issuerA }))).toBe('anonymous');
+      expect(await usernameOf(p, sign(keyA, { sub: 'mallory', iss: 'https://gateway.acme' }))).toBe('anonymous');
+    });
+
+    describe('a provider that wants a bearer token', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'granted-'));
+      const tokenFile = join(dir, 'token');
+
+      beforeEach(() => writeFileSync(tokenFile, 'sa-token-1\n'));
+
+      function kubernetesLike(conf: GrantedJwtPrincipalProviderConfig = {}) {
+        return new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: `${baseUrl}/a`, bearerTokenFile: tokenFile }, `${baseUrl}/b`], ...conf });
+      }
+
+      it('sends the token to its document and to the jwks_uri it announces — never to another provider', async () => {
+        const p = kubernetesLike();
+        expect(await usernameOf(p, sign(keyA, { sub: 'system:serviceaccount:my-namespace:orders', iss: issuerA }))).toBe('system:serviceaccount:my-namespace:orders');
+        expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+        expect(authorizations['/a/.well-known/openid-configuration']).toBe('Bearer sa-token-1');
+        expect(authorizations['/a/certs']).toBe('Bearer sa-token-1');
+        expect(authorizations['/b/.well-known/openid-configuration']).toBeUndefined();
+        expect(authorizations['/b/certs']).toBeUndefined();
+      });
+
+      it('reads the file at every fetch, so a rotated token is picked up', async () => {
+        const p = kubernetesLike({ jwksCacheMaxAge: 60_000 });
+        expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+        writeFileSync(tokenFile, 'sa-token-2');
+        advance(61_000);
+        expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('alice');
+        expect(authorizations['/a/.well-known/openid-configuration']).toBe('Bearer sa-token-2');
+      });
+
+      it('keeps serving the other providers when the token file is missing', async () => {
+        const p = new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: `${baseUrl}/a`, bearerTokenFile: join(dir, 'absent') }, `${baseUrl}/b`] });
+        expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA }))).toBe('anonymous');
+        expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+        expect(warnings()).toContain('OpenID configuration fetch failed');
+        expect(requested).not.toContain('/a/.well-known/openid-configuration');
+      });
+
+      it('refuses an entry without a URL', () => {
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: '', bearerTokenFile: tokenFile }] })).toThrow('each discoveryUris entry needs a URL');
+      });
+    });
+
+    describe('a provider whose issuer and JWK Set are given', () => {
+      // The Kubernetes API server's case: its document announces a jwks_uri out of reach
+      // (the control plane's internal address), while another URL serves the same keys.
+      const dir = mkdtempSync(join(tmpdir(), 'granted-'));
+      const tokenFile = join(dir, 'token');
+      const service = 'system:serviceaccount:my-namespace:orders';
+
+      beforeEach(() => writeFileSync(tokenFile, 'sa-token-1\n'));
+
+      function given(conf: GrantedJwtPrincipalProviderConfig = {}) {
+        return new GrantedJwtPrincipalProvider({
+          discoveryUris: [`${baseUrl}/b`, { issuer: issuerA, jwksUri: `${baseUrl}/a/certs`, bearerTokenFile: tokenFile, bypass: ['system:serviceaccount:my-namespace:*'] }],
+          ...conf,
+        });
+      }
+
+      it('verifies its tokens with the given JWK Set, reading no discovery document, and sends the token there', async () => {
+        const p = given();
+        expect(await usernameOf(p, sign(keyA, { sub: service, iss: issuerA }))).toBe(service);
+        expect(requested).toContain('/a/certs');
+        expect(requested).not.toContain('/a/.well-known/openid-configuration');
+        expect(authorizations['/a/certs']).toBe('Bearer sa-token-1');
+      });
+
+      it('keeps its bypass, and gives it to its own tokens only', async () => {
+        const p = given();
+        const req = reqWithToken(sign(keyA, { sub: service, iss: issuerA }));
+        await p.prepare(req);
+        expect(p.isBypassed(req)).toBe(true);
+        const other = reqWithToken(sign(keyB, { sub: service, iss: issuerB }));
+        await p.prepare(other);
+        expect(p.isBypassed(other)).toBe(false);
+        expect(authorizations['/b/certs']).toBeUndefined();
+      });
+
+      it('routes by the given issuer: its keys never verify a token claiming another', async () => {
+        const p = given();
+        expect(await usernameOf(p, sign(keyA, { sub: 'mallory', iss: issuerB }))).toBe('anonymous');
+        expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB }))).toBe('bob');
+      });
+
+      it('checks its own audience', async () => {
+        const p = new GrantedJwtPrincipalProvider({ discoveryUris: [{ issuer: issuerA, jwksUri: `${baseUrl}/a/certs`, audience: 'orders-api' }] });
+        expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA, aud: 'orders-api' }))).toBe('alice');
+        expect(await usernameOf(p, sign(keyA, { sub: 'alice', iss: issuerA, aud: 'billing-api' }))).toBe('anonymous');
+      });
+
+      it('refuses an issuer without a JWK Set, or the reverse', () => {
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ issuer: issuerA }] })).toThrow('issuer and jwksUri together, or neither');
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ jwksUri: `${baseUrl}/a/certs` }] })).toThrow('issuer and jwksUri together, or neither');
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ bearerTokenFile: tokenFile }] })).toThrow('or an issuer and a jwksUri');
+      });
+    });
+
+    describe('bypass', () => {
+      const service = 'system:serviceaccount:my-namespace:orders';
+
+      function cluster(conf: GrantedJwtPrincipalProviderConfig = {}) {
+        return GrantedJwtPrincipalProvider.keycloak({ discoveryUris: [{ uri: `${baseUrl}/a`, bypass: ['system:serviceaccount:my-namespace:*'] }, `${baseUrl}/b`], ...conf });
+      }
+
+      async function bypassed(p: GrantedJwtPrincipalProvider, token: string): Promise<boolean> {
+        const req = reqWithToken(token);
+        await p.prepare(req);
+        return p.isBypassed(req);
+      }
+
+      it('flags a verified token of its provider whose sub matches, and names it by its sub', async () => {
+        const p = cluster();
+        expect(await bypassed(p, sign(keyA, { sub: service, iss: issuerA }))).toBe(true);
+        // The keycloak preset reads preferred_username, which a service account token lacks.
+        expect(await usernameOf(p, sign(keyA, { sub: service, iss: issuerA }))).toBe(service);
+      });
+
+      it('ignores a sub outside the patterns', async () => {
+        const p = cluster();
+        expect(await bypassed(p, sign(keyA, { sub: 'system:serviceaccount:monitoring:otel', iss: issuerA }))).toBe(false);
+        expect(await bypassed(p, sign(keyA, { sub: 'system:serviceaccount:my-namespace', iss: issuerA }))).toBe(false);
+      });
+
+      it('never flags the same sub from another provider', async () => {
+        expect(await bypassed(cluster(), sign(keyB, { sub: service, iss: issuerB }))).toBe(false);
+      });
+
+      it('never flags a token that fails verification', async () => {
+        const p = cluster();
+        expect(await bypassed(p, sign(outsider, { sub: service, iss: issuerA }))).toBe(false);
+        expect(await bypassed(p, sign(keyA, { sub: service, iss: issuerA, exp: Math.floor(Date.now() / 1000) - 60 }))).toBe(false);
+        expect(await bypassed(p, jwt.sign({ sub: service, iss: issuerA }, null, { algorithm: 'none' }))).toBe(false);
+      });
+
+      it('takes * as any run of characters, and the rest literally', async () => {
+        const p = new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: `${baseUrl}/a`, bypass: ['svc.a', 'job-*-runner'] }] });
+        expect(await bypassed(p, sign(keyA, { sub: 'svc.a', iss: issuerA }))).toBe(true);
+        expect(await bypassed(p, sign(keyA, { sub: 'svcXa', iss: issuerA }))).toBe(false);
+        expect(await bypassed(p, sign(keyA, { sub: 'job-nightly-runner', iss: issuerA }))).toBe(true);
+      });
+
+      it('refuses a bypass that is not a list of patterns', () => {
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: `${baseUrl}/a`, bypass: 'system:*' as any }] })).toThrow('bypass is a list of sub patterns');
+        expect(() => new GrantedJwtPrincipalProvider({ discoveryUris: [{ uri: `${baseUrl}/a`, bypass: [''] }] })).toThrow('bypass is a list of sub patterns');
+      });
+    });
+
+    it('checks the audience of an entry in place of the global one', async () => {
+      const p = openid({ audience: 'orders-api', discoveryUris: [{ uri: `${baseUrl}/a`, audience: 'internal' }, `${baseUrl}/b`] });
+      expect(await usernameOf(p, sign(keyA, { sub: 'svc', iss: issuerA, aud: 'internal' }))).toBe('svc');
+      expect(await usernameOf(p, sign(keyA, { sub: 'svc', iss: issuerA, aud: 'orders-api' }))).toBe('anonymous');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB, aud: 'orders-api' }))).toBe('bob');
+      expect(await usernameOf(p, sign(keyB, { sub: 'bob', iss: issuerB, aud: 'internal' }))).toBe('anonymous');
+    });
+
+    it('refuses an ambiguous configuration at construction', () => {
+      expect(() => openid({ jwksUri: `${baseUrl}/jwks.json` })).toThrow('jwksUri needs an issuer when combined with discoveryUris');
+      expect(() => openid({ issuer: issuerA })).toThrow('issuer applies to jwksUri only');
+      expect(() => openid({ base64Key: 'pem' })).toThrow('discoveryUris cannot be combined');
+      expect(() => openid({ algorithm: 'HS256' })).toThrow('HS256 cannot be used with jwksUri or discoveryUris');
+    });
+  });
+});

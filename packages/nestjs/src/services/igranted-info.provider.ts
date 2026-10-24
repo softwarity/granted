@@ -1,0 +1,31 @@
+import { Request } from 'express';
+import { IncomingMessage } from 'http';
+
+export interface IGrantedPrincipalProvider {
+  /**
+   * Optional async step, awaited by the guard once per request before any
+   * getter is called — the place for I/O (fetching a JWKS, a session lookup…).
+   * Store what the getters need on the request: they stay synchronous.
+   */
+  prepare?(request: IncomingMessage): Promise<void>;
+
+  getUsernameFromRequest(request: Request): string;
+  getRolesFromRequest(request: Request): string[];
+  getTenantFromRequest(request: Request): string | undefined;
+
+  /**
+   * Optional: true when the request's principal passes every `@GrantedTo`
+   * without its specs being evaluated — e.g. a trusted service.
+   */
+  isBypassed?(request: Request): boolean;
+
+  getUsernameFromIncomingMessage(incomingMessage: IncomingMessage): string;
+  getRolesFromIncomingMessage(incomingMessage: IncomingMessage): string[];
+  getTenantFromIncomingMessage(incomingMessage: IncomingMessage): string | undefined;
+
+  /**
+   * Optional: any other attribute of the caller, read by `@Claim(name)` — a
+   * JWT claim, a gateway header… Returned as found: `@Claim` converts it.
+   */
+  getClaimFromIncomingMessage?(incomingMessage: IncomingMessage, name: string): unknown;
+}
