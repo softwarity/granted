@@ -112,6 +112,10 @@ type OpenIDProvider struct {
 	// provider, pass every [Granted.Require] — e.g.
 	// `system:serviceaccount:my-namespace:*` for the services of a namespace.
 	Bypass []string
+	// SkipReadiness leaves this provider out of [JWTProvider.Ready] — the
+	// Kubernetes API server, whose keys only verify service accounts: its
+	// outage mustn't take the service out of its users' traffic.
+	SkipReadiness bool
 }
 
 // JWTConfig configures [NewJWTProvider]: where the keys come from, which

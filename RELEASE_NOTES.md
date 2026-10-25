@@ -2,6 +2,15 @@
 
 ## NEXT RELEASE
 
+### New features
+
+- **Go and Quarkus: each route's rule in the OpenAPI document, as nestjs-granted writes it for `@GrantedTo`.** The same document in the three languages: in `security`, the entries are alternatives (or) and the roles of one entry are all required (and) — `or(hasRole(A), and(hasRole(B), hasRole(C)))` gives `[{bearer: [A]}, {bearer: [B, C]}]`, a branch without a role `{bearer: []}`, an open route `{}` — and a `403` states the rule in clear, `Forbidden unless: hasRole(A) or (hasRole(B) and hasRole(C))`; the scheme is `bearer` unless configured. **Go** depends on no router nor OpenAPI library: every built-in `Spec` now carries its role alternatives and its label, and `granted.Describe(scheme, specs...)` gives the `Security` and the `Forbidden` description to copy onto an operation — several specs read as an `and`, as `Require` has them; a `Spec` built by hand reads as an authenticated caller, labelled by its `ID`. **Quarkus**, with `quarkus-smallrye-openapi` (nothing happens without it), writes the rule of each route's `@RolesAllowed`, `@Authenticated`, `@PermitAll` or `@DenyAll` — the method's replacing the class's, `${...}` roles resolved with the build-time configuration, `deny-unannotated-endpoints` / `default-roles-allowed` reflected — plus a `401` where an anonymous caller is refused, as Quarkus answers it; smallrye-openapi's own automatic requirement and `401`/`403` are replaced on those routes, a `@SecurityRequirement` or an `@APIResponse` 401/403 the host declared is kept. Option `granted.openapi.security-scheme` (build time), added to the document as an HTTP bearer scheme unless it defines one by that name.
+- **Go: `(*JWTProvider).Ready(ctx)`, the readiness check of Quarkus's `granted-jwks`.** `nil` once the keys of each identity provider are fetched; otherwise an error naming each provider without keys and why — a status, a TLS handshake, a timeout, never a token. It asks what a verification asks, through the same cache and cooldown, so probing it in a loop never hammers an IdP. `OpenIDProvider.SkipReadiness` leaves a provider out — the Kubernetes API server; with a `Key` or `Unverified` there is nothing to wait for. The host wires it to its own health endpoint.
+
+### Internal changes
+
+- Go tests for `Describe` on the cases of nestjs-granted's OpenAPI tests, and for `Ready` (up after a fetch, down when the discovery or the JWK Set fails, `SkipReadiness`, one fetch per cooldown, the context ending the wait). Quarkus tests on a document smallrye-openapi really generates (`/q/openapi`): class and method rules, `**`, `@Authenticated`, `@PermitAll`, `@DenyAll`, a route without rule, the host's own 403 and responses, smallrye's auto-security replaced, `${...}` roles, `deny-unannotated-endpoints`, a custom scheme name and an existing scheme kept.
+
 ---
 
 ## 5.10.0

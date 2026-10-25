@@ -45,6 +45,11 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-smallrye-health-spi</artifactId>
         </dependency>
+        <!-- AddToOpenAPIDefinitionBuildItem: each route's rule in the OpenAPI document, when quarkus-smallrye-openapi is present. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi-spi</artifactId>
+        </dependency>
         <!-- The extension's own tests: an application built with it, and what fails its build or its start. -->
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -55,6 +60,12 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-smallrye-health-deployment</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- The OpenAPI document, as quarkus-smallrye-openapi generates it with granted's rules. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi-deployment</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

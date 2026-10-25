@@ -28,7 +28,7 @@ list(@GrantedClaim('territories', { type: 'string', array: true }) territories: 
 }
 ```
 
-Roles decide *which actions* a caller may take; claims scope *which data*.
+Roles decide *which actions* a caller may take; claims scope *which data*. Each route's rule also reads in the service's OpenAPI document.
 
 | Package | |
 |---|---|

@@ -129,6 +129,44 @@ granted.role-hierarchy.ROLE_ADMIN=ROLE_USER</app-code>
       nothing to fetch: UP. <code>granted.health.enabled=false</code> leaves the check out.
     </p>
 
+    <h3 id="openapi">OpenAPI</h3>
+    <p>
+      With <code>quarkus-smallrye-openapi</code>, granted writes each route's rule into the generated document
+      (<code>/q/openapi</code>), as nestjs-granted does for <code>&#64;GrantedTo</code>. Nothing to enable: without
+      that extension, nothing happens.
+    </p>
+    <table>
+      <thead><tr><th>Rule (the method's replaces the class's)</th><th><code>security</code></th><th>Responses</th></tr></thead>
+      <tbody>
+        <tr><td><code>&#64;RolesAllowed(&#123;"A", "B"&#125;)</code></td><td><code>[&#123;bearer: [A]&#125;, &#123;bearer: [B]&#125;]</code></td><td><code>401</code>, <code>403 Forbidden unless: hasRole(A) or hasRole(B)</code></td></tr>
+        <tr><td><code>&#64;RolesAllowed("**")</code>, <code>&#64;Authenticated</code></td><td><code>[&#123;bearer: []&#125;]</code></td><td><code>401</code> — an authenticated caller always gets through: no <code>403</code></td></tr>
+        <tr><td><code>&#64;PermitAll</code></td><td><code>[&#123;&#125;]</code></td><td>—</td></tr>
+        <tr><td><code>&#64;DenyAll</code></td><td>none</td><td><code>401</code>, <code>403 Forbidden: nobody may call this route</code></td></tr>
+      </tbody>
+    </table>
+    <ul>
+      <li>A <code>401</code> where an anonymous caller is refused: Quarkus answers <code>401</code>, not <code>403</code>, to a caller without identity.</li>
+      <li>
+        <strong>What you declared stays</strong>: a <code>&#64;SecurityRequirement</code> is kept, granted's entries after
+        it; a <code>401</code> or <code>403</code> of an <code>&#64;APIResponse</code> is kept unchanged. What
+        smallrye-openapi adds on its own from the same annotations — every role in one entry,
+        <code>401 Not Authorized</code>, <code>403 Not Allowed</code> — is replaced.
+      </li>
+      <li>
+        The scheme is <code>bearer</code>, or <code>granted.openapi.security-scheme</code> (build time); it is added
+        to the document as an HTTP bearer scheme unless the document defines one by that name.
+      </li>
+      <li>
+        <code>$&#123;...&#125;</code> in <code>&#64;RolesAllowed</code> is resolved with the configuration the application is
+        built with — the document is generated then; a value only given at startup is shown as written.
+      </li>
+      <li>
+        A route without a rule is left alone, unless <code>quarkus.security.jaxrs.deny-unannotated-endpoints</code>
+        or <code>default-roles-allowed</code> gives it one. Left alone too: <code>&#64;PermissionsAllowed</code>,
+        sub-resource locators.
+      </li>
+    </ul>
+
     <h3>Roles</h3>
     <app-code lang="properties">granted.role-hierarchy.ADMIN=MANAGER
 granted.role-hierarchy.MANAGER=USER
@@ -165,6 +203,7 @@ granted.known-roles=ADMIN,MANAGER,USER</app-code>
         <tr><td><code>granted.jwt.discovery-uris[n].tls-configuration-name</code></td><td><code>granted.jwt.tls-configuration-name</code></td><td>This provider's own</td></tr>
         <tr><td><code>granted.jwt.discovery-uris[n].readiness</code></td><td><code>true</code></td><td>Whether <code>granted-jwks</code> waits for this provider's keys</td></tr>
         <tr><td><code>granted.health.enabled</code></td><td><code>true</code></td><td>The <code>granted-jwks</code> readiness check, with <code>quarkus-smallrye-health</code> (build time)</td></tr>
+        <tr><td><code>granted.openapi.security-scheme</code></td><td><code>bearer</code></td><td>The scheme the routes' requirements name in the OpenAPI document, with <code>quarkus-smallrye-openapi</code> (build time)</td></tr>
         <tr><td><code>granted.role-hierarchy.&lt;ROLE&gt;</code></td><td>—</td><td>The roles it implies</td></tr>
         <tr><td><code>granted.known-roles</code></td><td>— (every role kept)</td><td>The roles this service knows</td></tr>
         <tr><td><code>granted.access-denied.details</code></td><td><code>false</code></td><td>The reason of a 403 in the response too</td></tr>

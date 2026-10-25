@@ -180,6 +180,33 @@ The fields go to the MDC for that line (`denied.spec`, `denied.username`, `denie
 
 An anonymous caller on a protected route gets a `401`, as Quarkus answers it.
 
+## OpenAPI
+
+With `quarkus-smallrye-openapi`, granted writes each route's rule into the generated document (`/q/openapi`), as nestjs-granted does for `@GrantedTo`. Nothing to enable: without that extension, nothing happens.
+
+- **`security`**: the entries are alternatives (or), the roles of one entry are all required (and).
+- **`403`**: the rule in clear, when an authenticated caller can be refused.
+- **`401`**: when an anonymous caller is refused — Quarkus answers `401`, not `403`, to a caller without identity.
+
+| Rule (the method's replaces the class's) | `security` | Responses |
+|---|---|---|
+| `@RolesAllowed({"A", "B"})` | `[{bearer: [A]}, {bearer: [B]}]` | `401`, `403 Forbidden unless: hasRole(A) or hasRole(B)` |
+| `@RolesAllowed("**")`, `@Authenticated` | `[{bearer: []}]` | `401` — an authenticated caller always gets through: no `403` |
+| `@RolesAllowed({"A", "**"})` | `[{bearer: [A]}, {bearer: []}]` | `401` |
+| `@PermitAll` | `[{}]` | — |
+| `@DenyAll` | none | `401`, `403 Forbidden: nobody may call this route` |
+
+```properties
+# The scheme the requirements name (build time). Defined in the document as an HTTP bearer scheme unless it already defines one by that name.
+granted.openapi.security-scheme=bearer
+```
+
+- **What you declared stays**: a `@SecurityRequirement` on the method or the class is kept, granted's entries added after it; a `401` or `403` of an `@APIResponse` is kept unchanged; the other responses are not touched.
+- **smallrye-openapi's own** — what `quarkus.smallrye-openapi.auto-add-security-requirement` adds from the same annotations: a requirement under `SecurityScheme` that lists every role in one entry, `401 Not Authorized`, `403 Not Allowed` — is replaced on the routes granted describes.
+- **`${...}` in `@RolesAllowed`** is resolved with the configuration the application is built with — the document is generated then; a comma-separated value gives several roles, as Quarkus reads it. A value only given when the application starts (an environment variable of the pod) is not known yet: the role is shown as written.
+- **Without a rule**, a route is left alone — unless `quarkus.security.jaxrs.deny-unannotated-endpoints` (as `@DenyAll`) or `quarkus.security.jaxrs.default-roles-allowed` (as `@RolesAllowed`) gives it one, as Quarkus REST does.
+- **Left alone** too: a `@PermissionsAllowed` or authorization-policy route, the methods of a sub-resource locator, and a path and method several resource methods answer with different rules.
+
 ## Options
 
 | Property | Default | |
@@ -205,6 +232,7 @@ An anonymous caller on a protected route gets a `401`, as Quarkus answers it.
 | `granted.jwt.discovery-uris[n].tls-configuration-name` | `granted.jwt.tls-configuration-name` | This provider's own |
 | `granted.jwt.discovery-uris[n].readiness` | `true` | Whether `granted-jwks` waits for this provider's keys |
 | `granted.health.enabled` | `true` | The `granted-jwks` readiness check, with `quarkus-smallrye-health` (build time) |
+| `granted.openapi.security-scheme` | `bearer` | The scheme the routes' requirements name in the OpenAPI document, with `quarkus-smallrye-openapi` (build time) |
 | `granted.role-hierarchy.<ROLE>` | — | The roles `<ROLE>` implies |
 | `granted.known-roles` | — (every role kept) | The roles this service knows |
 | `granted.access-denied.details` | `false` | The reason of a 403 in the response too |

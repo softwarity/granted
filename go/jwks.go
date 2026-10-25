@@ -41,6 +41,8 @@ type fetched[T any] struct {
 	fetchedAt   time.Time
 	attemptedAt time.Time
 	pending     chan struct{}
+	// lastErr is why the last fetch failed; nil once one succeeds.
+	lastErr error
 }
 
 // get returns the value and its generation: a generation that didn't change
@@ -77,12 +79,21 @@ func (f *fetched[T]) get(force bool) (T, uint64) {
 		f.value = value
 		f.generation++
 		f.fetchedAt = f.now()
+		f.lastErr = nil
 	} else {
+		f.lastErr = err
 		f.logger.Warn(f.failure() + ": " + err.Error())
 	}
 	f.pending = nil
 	close(pending)
 	return f.value, f.generation
+}
+
+// failed is why the last fetch failed, nil once one succeeds.
+func (f *fetched[T]) failed() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastErr
 }
 
 // expire makes the next get fetch, cooldown or not — its URL changed. The last
@@ -114,6 +125,10 @@ type source struct {
 	discovery *fetched[*openidConfiguration]
 	audience  Audience
 	bypass    []*regexp.Regexp
+	// label names the source in [JWTProvider.Ready]'s error.
+	label string
+	// readiness: [JWTProvider.Ready] waits for its keys.
+	readiness bool
 
 	mu      sync.Mutex
 	jwksURI string
@@ -124,7 +139,10 @@ type source struct {
 }
 
 func (p *JWTProvider) newSource(provider OpenIDProvider, issuer []string, audience *Audience) *source {
-	s := &source{audience: *audience, jwksURI: provider.JWKSURI, issuers: issuer}
+	s := &source{audience: *audience, jwksURI: provider.JWKSURI, issuers: issuer, label: provider.URI, readiness: !provider.SkipReadiness}
+	if s.label == "" {
+		s.label = provider.JWKSURI
+	}
 	for _, pattern := range provider.Bypass {
 		s.bypass = append(s.bypass, subjectPattern(pattern))
 	}
@@ -323,6 +341,77 @@ func (p *JWTProvider) keyAlgorithms(possible []string, declared *string) []strin
 		}
 	}
 	return out
+}
+
+// Ready reports whether the keys of the identity providers are at hand:
+// without them every token is refused, so the service isn't ready to serve.
+// Wire it to the host's readiness endpoint. The error names each provider
+// without keys and why — a status, a TLS handshake, a timeout; never a token.
+//
+// It asks what a verification asks, through the same cache and cooldown:
+// probing it in a loop never fetches more than once per [JWTConfig.JWKSCooldown].
+// A provider with [OpenIDProvider.SkipReadiness] isn't waited for. With a Key,
+// or Unverified, there is nothing to wait for: nil. ctx bounds the wait, not
+// the fetch, which other requests may share.
+func (p *JWTProvider) Ready(ctx context.Context) error {
+	var waited []*source
+	for _, s := range p.sources {
+		if s.readiness {
+			waited = append(waited, s)
+		}
+	}
+	failures := make([]string, len(waited))
+	done := make(chan struct{})
+	go func() {
+		var wg sync.WaitGroup
+		for i, s := range waited {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				failures[i] = s.unready()
+			}()
+		}
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("granted: identity providers not checked: %w", ctx.Err())
+	case <-done:
+	}
+	var down []string
+	for i, failure := range failures {
+		if failure != "" {
+			down = append(down, waited[i].label+": "+failure)
+		}
+	}
+	if len(down) > 0 {
+		return errors.New("granted: no keys from " + strings.Join(down, "; "))
+	}
+	return nil
+}
+
+// unready is why the source has no key, empty when it has some. A source
+// without keys asks for them as an unknown `kid` would.
+func (s *source) unready() string {
+	s.discover()
+	if s.discovery != nil && s.expectedIssuers() == nil {
+		if err := s.discovery.failed(); err != nil {
+			return "OpenID configuration: " + err.Error()
+		}
+		return "OpenID configuration not fetched"
+	}
+	keys, _ := s.keys.get(false)
+	if len(keys) == 0 {
+		keys, _ = s.keys.get(true)
+	}
+	if len(keys) > 0 {
+		return ""
+	}
+	if err := s.keys.failed(); err != nil {
+		return "JWK Set: " + err.Error()
+	}
+	return "no key in the JWK Set"
 }
 
 func (p *JWTProvider) sourcesFor(iss any) []*source {

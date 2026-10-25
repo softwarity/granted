@@ -14,6 +14,10 @@ type Spec struct {
 	ID string
 	// Check reports whether the caller of r satisfies the rule.
 	Check func(r *http.Request, c *Caller) bool
+
+	// How [Describe] reads the rule; nil for a spec built by hand, which reads
+	// as an authenticated caller, labelled by its ID.
+	description *description
 }
 
 // And passes when every spec passes.
@@ -28,6 +32,7 @@ func And(specs ...Spec) Spec {
 			}
 			return true
 		},
+		description: &description{alternatives: andAlternatives(specs), label: joinLabels(specs, "and"), compound: len(specs) > 1},
 	}
 }
 
@@ -43,27 +48,37 @@ func Or(specs ...Spec) Spec {
 			}
 			return false
 		},
+		description: &description{alternatives: orAlternatives(specs), label: joinLabels(specs, "or"), compound: len(specs) > 1},
 	}
 }
 
 // Not passes when spec fails.
 func Not(spec Spec) Spec {
-	return Spec{ID: "not(" + spec.ID + ")", Check: func(r *http.Request, c *Caller) bool { return !spec.Check(r, c) }}
+	return Spec{
+		ID:    "not(" + spec.ID + ")",
+		Check: func(r *http.Request, c *Caller) bool { return !spec.Check(r, c) },
+		// Not of a role is no role to grant: an authenticated caller.
+		description: &description{alternatives: []alternative{{}}, label: "not(" + joinLabels([]Spec{spec}, "and") + ")"},
+	}
 }
 
 // IsTrue always passes.
 func IsTrue() Spec {
-	return Spec{ID: "isTrue()", Check: func(*http.Request, *Caller) bool { return true }}
+	return Spec{ID: "isTrue()", Check: func(*http.Request, *Caller) bool { return true }, description: &description{alternatives: []alternative{nil}, label: "isTrue()"}}
 }
 
 // IsFalse never passes.
 func IsFalse() Spec {
-	return Spec{ID: "isFalse()", Check: func(*http.Request, *Caller) bool { return false }}
+	return Spec{ID: "isFalse()", Check: func(*http.Request, *Caller) bool { return false }, description: &description{alternatives: []alternative{}, label: "isFalse()"}}
 }
 
 // HasRole passes when the caller holds role, after the hierarchy.
 func HasRole(role string) Spec {
-	return Spec{ID: "hasRole(" + role + ")", Check: func(_ *http.Request, c *Caller) bool { return c.HasRole(role) }}
+	return Spec{
+		ID:          "hasRole(" + role + ")",
+		Check:       func(_ *http.Request, c *Caller) bool { return c.HasRole(role) },
+		description: &description{alternatives: []alternative{{role}}, label: "hasRole(" + role + ")"},
+	}
 }
 
 // IsAuthenticated passes when something identified the caller.

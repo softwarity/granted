@@ -180,8 +180,8 @@ at construction.
 | `Issuer` | not checked | accepted `iss` |
 | `Audience` | not checked | accepted `aud`: `Values` and/or `Patterns` |
 | `JWKSCacheMaxAge` | 10 min | keys older than this are re-fetched, so a withdrawn key stops being accepted |
-| `Cooldown` | 30 s | never two fetches closer than this, so forged `kid`s can't hammer the identity provider |
-| `Timeout` | 5 s | of a fetch |
+| `JWKSCooldown` | 30 s | never two fetches closer than this, so forged `kid`s can't hammer the identity provider |
+| `JWKSTimeout` | 5 s | of a fetch |
 
 A failed fetch keeps the last known keys and logs a warning. Concurrent requests
 share one fetch.
@@ -207,6 +207,34 @@ A token is verified only with the keys of the provider whose issuer is its
 `sub` patterns whose tokens — from that provider only — pass every `Require`:
 the services of your namespace call each other with their pod's token.
 
+#### Readiness
+
+Without its providers' keys, the provider refuses every token: the service
+isn't ready to serve. `Ready` says so — wire it to your readiness endpoint:
+
+```go
+mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	if err := provider.Ready(ctx); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+})
+```
+
+- `nil` once each provider's keys are fetched; otherwise an error naming each
+  provider without keys and why — a status, a TLS handshake, a timeout.
+- It asks what a verification asks, through the same cache and cooldown:
+  probing it in a loop never fetches more than once per `JWKSCooldown`.
+- A provider with `SkipReadiness: true` is left out — the Kubernetes API
+  server, whose keys only verify service accounts: its outage mustn't take the
+  service out of its users' traffic. `JWKSURI` given alone is waited for.
+- With a `Key`, or `Unverified`, there is nothing to wait for: `nil`.
+
+The same check as Quarkus's `granted-jwks`.
+
 ### Your own provider
 
 ```go
@@ -228,3 +256,27 @@ granted.New(granted.Options{
 The hierarchy is expanded first, then the unknown roles are dropped. `Roles(ctx)`
 gives the roles the specs saw. `Options.Disabled` lets every request through
 while still reading the caller — for a local profile.
+
+## OpenAPI
+
+granted depends on no router nor OpenAPI library: `Describe` gives what to
+write on the operation, from the specs given to `Require`.
+
+```go
+rule := []granted.Spec{granted.Or(granted.HasRole("ADMIN"), granted.And(granted.HasRole("MANAGER"), granted.HasRole("AUDIT")))}
+mux.Handle("POST /orders", g.Require(rule...)(createOrder))
+
+d := granted.Describe("bearer", rule...) // the scheme your document declares; "" is "bearer"
+// d.Security  → [{"bearer": ["ADMIN"]}, {"bearer": ["MANAGER", "AUDIT"]}]
+// d.Forbidden → "Forbidden unless: hasRole(ADMIN) or (hasRole(MANAGER) and hasRole(AUDIT))"
+```
+
+- `Security` entries are alternatives (or); the roles of one entry are all
+  required (and). Several specs are all required, as `Require` has them.
+- A branch with no role — `IsUser`, `IsAuthenticated`, `Not(...)`, a spec built
+  by hand — gives `{"bearer": []}`, an authenticated caller; `IsTrue()` gives
+  `{}`. `IsFalse()` gives no `Security` at all: an empty one would mean "open".
+- `Forbidden` is the `403` response's description; empty when an anonymous
+  caller gets through anyway. Keep the 403 you documented yourself, if any.
+
+The same document as nestjs-granted's `@GrantedTo` and quarkus-granted's.
