@@ -2,6 +2,10 @@
 
 ## NEXT RELEASE
 
+---
+
+## 5.11.0
+
 ### New features
 
 - **Go and Quarkus: each route's rule in the OpenAPI document, as nestjs-granted writes it for `@GrantedTo`.** The same document in the three languages: in `security`, the entries are alternatives (or) and the roles of one entry are all required (and) — `or(hasRole(A), and(hasRole(B), hasRole(C)))` gives `[{bearer: [A]}, {bearer: [B, C]}]`, a branch without a role `{bearer: []}`, an open route `{}` — and a `403` states the rule in clear, `Forbidden unless: hasRole(A) or (hasRole(B) and hasRole(C))`; the scheme is `bearer` unless configured. **Go** depends on no router nor OpenAPI library: every built-in `Spec` now carries its role alternatives and its label, and `granted.Describe(scheme, specs...)` gives the `Security` and the `Forbidden` description to copy onto an operation — several specs read as an `and`, as `Require` has them; a `Spec` built by hand reads as an authenticated caller, labelled by its `ID`. **Quarkus**, with `quarkus-smallrye-openapi` (nothing happens without it), writes the rule of each route's `@RolesAllowed`, `@Authenticated`, `@PermitAll` or `@DenyAll` — the method's replacing the class's, `${...}` roles resolved with the build-time configuration, `deny-unannotated-endpoints` / `default-roles-allowed` reflected — plus a `401` where an anonymous caller is refused, as Quarkus answers it; smallrye-openapi's own automatic requirement and `401`/`403` are replaced on those routes, a `@SecurityRequirement` or an `@APIResponse` 401/403 the host declared is kept. Option `granted.openapi.security-scheme` (build time), added to the document as an HTTP bearer scheme unless it defines one by that name.
